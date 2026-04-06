@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Remote Control · PDF Presenter</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body class="remote-page">
+    <!-- Connection screen -->
+    <div class="remote-connect" id="remoteConnect">
+      <div class="rc-logo">⬡</div>
+      <h1>Remote Control</h1>
+      <p>Enter your session ID to connect</p>
+      <div class="rc-input-row">
+        <input
+          type="text"
+          id="sessionInput"
+          placeholder="e.g. A1B2C3D4"
+          maxlength="8"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="btn btn-primary" id="connectBtn">Connect</button>
+      </div>
+      <p class="rc-hint" id="rcHint"></p>
+    </div>
+
+    <!-- Remote control pad (shown after connected) -->
+    <div class="remote-pad" id="remotePad" style="display: none">
+      <div class="rc-header">
+        <span class="rc-session-badge" id="rcSessionBadge">—</span>
+        <div style="display: flex; align-items: center; gap: 8px">
+          <span class="rc-status connected" id="rcStatusDot">● Live</span>
+          <button
+            class="btn-icon rc-fullscreen-btn"
+            id="rcHeaderFullscreen"
+            title="Fullscreen"
+          >
+            ⛶
+          </button>
+        </div>
+        <div style="display: flex; gap: 6px; align-items: center">
+          <button class="btn-icon" id="rcFullscreen" title="Fullscreen">
+            ⛶
+          </button>
+          <button class="btn-icon" id="rcDisconnect" title="Disconnect">
+            ✕
+          </button>
+        </div>
+      </div>
+
+      <!-- Unified Control and Notes Panel -->
+      <div class="rc-tab-panel" id="tabControl">
+        <!-- Slide counter display -->
+        <div class="rc-slide-preview">
+          <div class="rc-slide-box" id="rcSlideBox">
+            <span id="rcSlideNum">—</span>
+            <span class="rc-slide-divider">/</span>
+            <span id="rcTotalSlides">—</span>
+          </div>
+          <p class="rc-slide-label">Current Slide</p>
+        </div>
+
+        <!-- Main navigation buttons -->
+        <div class="rc-nav">
+          <button class="rc-btn rc-btn-prev" id="rcPrev">
+            <span class="rc-arrow">&#8249;</span>
+            <span>Prev</span>
+          </button>
+          <button class="rc-btn rc-btn-next" id="rcNext">
+            <span class="rc-arrow">&#8250;</span>
+            <span>Next</span>
+          </button>
+        </div>
+
+        <!-- Slide jump input -->
+        <div class="rc-jump">
+          <label>Jump to slide</label>
+          <div class="rc-jump-row">
+            <input type="number" id="jumpInput" min="1" placeholder="1" />
+            <button class="btn btn-sm" id="jumpBtn">Go</button>
+          </div>
+        </div>
+
+        <!-- Notes Section -->
+        <div class="rc-notes-section">
+          <div class="rc-notes-toolbar">
+            <span class="notes-label">Speaker Notes</span>
+            <div class="notes-controls">
+              <button
+                class="btn-icon notes-font-btn"
+                id="notesFontDown"
+                title="Smaller text"
+              >
+                A−
+              </button>
+              <button
+                class="btn-icon notes-font-btn"
+                id="notesFontUp"
+                title="Larger text"
+              >
+                A+
+              </button>
+              <button class="btn btn-sm" id="notesTeleBtn">
+                ▶ Teleprompter
+              </button>
+            </div>
+          </div>
+          <textarea
+            id="notesArea"
+            class="rc-notes-area"
+            placeholder="Type or paste your speaker notes here…&#10;&#10;They stay on your phone while the audience sees the slides."
+          ></textarea>
+        </div>
+
+        <!-- Swipe hint -->
+        <p class="rc-swipe-hint">← Swipe left/right to change slides →</p>
+      </div>
+
+      <!-- Teleprompter overlay (fullscreen scrolling text) -->
+      <div
+        class="teleprompter-overlay"
+        id="teleprompterOverlay"
+        style="display: none"
+      >
+        <div class="tp-toolbar">
+          <button class="btn-icon" id="tpClose">✕</button>
+          <span class="tp-title">Teleprompter</span>
+          <div class="tp-speed-row">
+            <label>Speed</label>
+            <input
+              type="range"
+              id="tpSpeed"
+              min="0"
+              max="5"
+              step="0.5"
+              value="1.5"
+            />
+          </div>
+          <button class="btn btn-sm" id="tpPlayPause">⏸ Pause</button>
+        </div>
+        <div class="tp-text-wrap" id="tpTextWrap">
+          <div class="tp-text" id="tpText"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Fullscreen overlay for control pad -->
+    <div class="rc-fs-overlay" id="rcFsOverlay" style="display: none">
+      <div class="rfs-counter" id="rfsCounter">— / —</div>
+      <div class="rfs-nav">
+        <button class="rfs-btn" id="rfsPrev">&#8249;</button>
+        <button class="rfs-btn rfs-next" id="rfsNext">&#8250;</button>
+      </div>
+      <button class="rfs-exit" id="rfsExit">✕ Exit</button>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/js/remote.js"></script>
+  </body>
+</html>

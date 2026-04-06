@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>PDF Presenter</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <!-- PDF.js from CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+    <!-- QRious for client-side QR (fallback) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+  </head>
+  <body class="presenter-page">
+    <!-- ── Top Bar ─────────────────────────────────────────────────── -->
+    <header class="topbar" id="topbar">
+      <div class="topbar-left">
+        <span class="logo">⬡ Presenter</span>
+        <span class="session-badge" id="sessionBadge" title="Session ID"
+          >—</span
+        >
+      </div>
+      <div class="topbar-center">
+        <span class="slide-counter" id="slideCounter">— / —</span>
+      </div>
+      <div class="topbar-right">
+        <button class="btn-icon" id="themeToggle" title="Toggle theme">
+          ☀
+        </button>
+        <button class="btn-icon" id="fullscreenBtn" title="Fullscreen (F)">
+          ⛶
+        </button>
+        <button
+          class="btn btn-primary"
+          id="showRemoteBtn"
+          title="Show remote QR"
+        >
+          📱 Remote
+        </button>
+      </div>
+    </header>
+
+    <!-- ── Setup Panel (shown before PDF is loaded) ───────────────── -->
+    <div class="setup-overlay" id="setupOverlay">
+      <div class="setup-card">
+        <div class="setup-logo">⬡</div>
+        <h1>PDF Presenter</h1>
+        <p class="setup-sub">
+          Upload a PDF and start presenting. Control slides from any device.
+        </p>
+
+        <div class="upload-zone" id="uploadZone">
+          <input type="file" id="fileInput" accept=".pdf" multiple hidden />
+          <div class="upload-icon">📄</div>
+          <p>
+            Drop PDF here or
+            <label for="fileInput" class="upload-link">browse</label>
+          </p>
+          <span class="upload-hint"
+            >Up to 100 MB · Multiple files supported</span
+          >
+        </div>
+
+        <!-- PDF library (previously uploaded) -->
+        <div class="pdf-library" id="pdfLibrary" style="display: none">
+          <p class="library-title">Or load a previously uploaded PDF:</p>
+          <div class="library-list" id="libraryList"></div>
+        </div>
+
+        <div class="upload-progress" id="uploadProgress" style="display: none">
+          <div class="progress-bar">
+            <div class="progress-fill" id="progressFill"></div>
+          </div>
+          <span id="progressLabel">Uploading…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Slide Canvas Area ───────────────────────────────────────── -->
+    <main class="slide-area" id="slideArea">
+      <div class="slide-wrapper" id="slideWrapper">
+        <canvas id="slideCanvas"></canvas>
+        <!-- Laser pointer overlay -->
+        <div class="laser-dot" id="laserDot"></div>
+        <!-- Transition overlay -->
+        <div class="transition-overlay" id="transitionOverlay"></div>
+      </div>
+
+      <!-- Navigation arrows -->
+      <button class="nav-btn nav-prev" id="prevBtn" title="Previous (←)">
+        &#8249;
+      </button>
+      <button class="nav-btn nav-next" id="nextBtn" title="Next (→)">
+        &#8250;
+      </button>
+
+      <!-- Slide strip (thumbnail bar) -->
+      <div class="slide-strip" id="slideStrip"></div>
+    </main>
+
+    <!-- ── Remote Control Modal ────────────────────────────────────── -->
+    <div class="modal-backdrop" id="remoteModal" style="display: none">
+      <div class="modal-card">
+        <button class="modal-close" id="closeRemoteModal">✕</button>
+        <h2>Remote Control</h2>
+        <p class="modal-sub">Scan with your phone to control slides</p>
+
+        <!-- IP override input so QR works on LAN -->
+        <div class="ip-row">
+          <label class="ip-label"
+            >Device IP <span class="ip-hint">(for network access)</span></label
+          >
+          <div class="ip-input-group">
+            <input
+              type="text"
+              id="ipInput"
+              placeholder="e.g. 192.168.1.42"
+              spellcheck="false"
+              autocomplete="off"
+            />
+            <button class="btn btn-sm" id="applyIpBtn">Apply</button>
+          </div>
+          <p class="ip-note" id="ipNote">
+            Leave blank to use <code>localhost</code>
+          </p>
+        </div>
+
+        <canvas id="qrCanvas"></canvas>
+        <p class="remote-url" id="remoteUrlDisplay">—</p>
+
+        <div class="remote-stats">
+          <span>Session: <strong id="modalSessionId">—</strong></span>
+          <span id="connectedCount">0 remote(s) connected</span>
+        </div>
+        <button class="btn btn-copy" id="copyUrlBtn">Copy Link</button>
+      </div>
+    </div>
+
+    <!-- ── PDF Library Modal ───────────────────────────────────────── -->
+    <div class="modal-backdrop" id="libraryModal" style="display: none">
+      <div class="modal-card modal-wide">
+        <button class="modal-close" id="closeLibraryModal">✕</button>
+        <h2>PDF Library</h2>
+        <div class="library-grid" id="libraryGrid"></div>
+      </div>
+    </div>
+
+    <!-- ── Toast notification ─────────────────────────────────────── -->
+    <div class="toast" id="toast"></div>
+
+    <script src="/js/presenter.js"></script>
+  </body>
+</html>
