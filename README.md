@@ -32,8 +32,9 @@ Watch this complete video guide to learn how to install and use PDF Presenter:
 
 ### Installation & Usage Guide
 
-![installation_guide](explanation.mp4)
-_[Video: explanation.mp4 - Complete setup and usage demonstration]_
+[Watch the Video Tutorial](https://github.com/AHMEDabdamine/pdf-presenter/releases/download/v1.0.0/explanation.mp4)
+
+_[Note: To view the video, click the link above. It demonstrates setup, remote control, and all key features.]_
 
 This video covers:
 
