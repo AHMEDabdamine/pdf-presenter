@@ -9,20 +9,40 @@
 
 ## Features
 
-| Feature | Details |
-|---|---|
-| PDF Rendering | Full-quality rendering via PDF.js (works offline) |
-| Remote Control | Control slides from phone/tablet via QR code |
-| Viewer Mode | View-only mode for audience (separate from remote) |
-| Real-time Sync | WebSocket sync — all viewers stay in step |
-| Keyboard Nav | Arrow keys, Space, Page Up/Down |
-| Touch & Swipe | Works on tablets and touch screens |
-| Dark / Light Mode | Toggle with one click |
-| Multi-PDF | Upload multiple PDFs and switch between them |
-| Fullscreen | Distraction-free presentation mode (presenter + viewer) |
-| Thumbnail Strip | Scrub through slides quickly |
-| Orientation | Choose portrait/landscape for optimal viewing |
-| Offline Ready | All vendor files bundled — no internet needed |
+| Feature           | Details                                                 |
+| ----------------- | ------------------------------------------------------- |
+| PDF Rendering     | Full-quality rendering via PDF.js (works offline)       |
+| Remote Control    | Control slides from phone/tablet via QR code            |
+| Viewer Mode       | View-only mode for audience (separate from remote)      |
+| Real-time Sync    | WebSocket sync — all viewers stay in step               |
+| Keyboard Nav      | Arrow keys, Space, Page Up/Down                         |
+| Touch & Swipe     | Works on tablets and touch screens                      |
+| Dark / Light Mode | Toggle with one click                                   |
+| Multi-PDF         | Upload multiple PDFs and switch between them            |
+| Fullscreen        | Distraction-free presentation mode (presenter + viewer) |
+| Thumbnail Strip   | Scrub through slides quickly                            |
+| Orientation       | Choose portrait/landscape for optimal viewing           |
+| Offline Ready     | All vendor files bundled — no internet needed           |
+
+---
+
+## Video Tutorial
+
+Watch this complete video guide to learn how to install and use PDF Presenter:
+
+### Installation & Usage Guide
+
+https://github.com/user-attachments/assets/12345678-1234-1234-1234-123456789012
+
+_[Video: explanation.mp4 - Complete setup and usage demonstration]_
+
+This video covers:
+
+- Step-by-step installation process
+- How to start the application
+- Remote control setup and usage
+- Key features and navigation
+- Tips for effective presentations
 
 ---
 
@@ -31,20 +51,23 @@
 ### Automatic Installation (Recommended)
 
 #### Linux / macOS
+
 ```bash
-git clone https://github.com/your-username/pdf-presenter
+git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 ./linux-install.sh
 ```
 
 #### Windows
+
 ```batch
-git clone https://github.com/your-username/pdf-presenter
+git clone https://github.com/AHMEDabdamine/pdf-presenter.gitr
 cd pdf-presenter
 windows-install.bat
 ```
 
 The install scripts will:
+
 - Check and install Node.js if needed
 - Install npm dependencies (skips if already installed)
 - Download offline vendor files
@@ -70,8 +93,6 @@ cd pdf-presenter
 ```bash
 npm install
 ```
-
-
 
 #### 3. Start the Server
 
@@ -143,9 +164,9 @@ pdf-presenter/
 
 ## Configuration
 
-| Environment Variable | Default | Description |
-|---|---|---|
-| `PORT` | `3000` | HTTP server port |
+| Environment Variable | Default | Description      |
+| -------------------- | ------- | ---------------- |
+| `PORT`               | `3000`  | HTTP server port |
 
 ```bash
 PORT=8080 npm start
@@ -162,6 +183,7 @@ All devices connect to the same Wi-Fi router. The laptop runs the Node.js server
 ![Network Diagram](pdf_presenter_device_network.svg)
 
 Find your machine's local IP:
+
 - **Linux/macOS:** `ip addr` or `ifconfig`
 - **Windows:** `ipconfig`
 
@@ -195,25 +217,25 @@ location / {
 
 ## Keyboard Shortcuts
 
-| Key | Action |
-|---|---|
-| `→` / `↓` / `Space` / `Page Down` | Next slide |
-| `←` / `↑` / `Page Up` | Previous slide |
-| `F` | Toggle fullscreen |
-| `Esc` | Close modal / exit fullscreen |
+| Key                               | Action                        |
+| --------------------------------- | ----------------------------- |
+| `→` / `↓` / `Space` / `Page Down` | Next slide                    |
+| `←` / `↑` / `Page Up`             | Previous slide                |
+| `F`                               | Toggle fullscreen             |
+| `Esc`                             | Close modal / exit fullscreen |
 
 ---
 
 ## Tech Stack
 
-| Layer | Technology |
-|---|---|
-| Frontend | Vanilla HTML + CSS + JavaScript |
-| PDF Rendering | [PDF.js](https://mozilla.github.io/pdf.js/) 3.x |
-| Backend | [Express](https://expressjs.com/) 4.x |
-| WebSockets | [Socket.io](https://socket.io/) 4.x |
-| File Upload | [Multer](https://github.com/expressjs/multer) |
-| QR Code | [qrcode](https://github.com/soldair/node-qrcode) (server) + [QRious](https://github.com/neocotic/qrious) (fallback) |
+| Layer         | Technology                                                                                                          |
+| ------------- | ------------------------------------------------------------------------------------------------------------------- |
+| Frontend      | Vanilla HTML + CSS + JavaScript                                                                                     |
+| PDF Rendering | [PDF.js](https://mozilla.github.io/pdf.js/) 3.x                                                                     |
+| Backend       | [Express](https://expressjs.com/) 4.x                                                                               |
+| WebSockets    | [Socket.io](https://socket.io/) 4.x                                                                                 |
+| File Upload   | [Multer](https://github.com/expressjs/multer)                                                                       |
+| QR Code       | [qrcode](https://github.com/soldair/node-qrcode) (server) + [QRious](https://github.com/neocotic/qrious) (fallback) |
 
 ---
 
