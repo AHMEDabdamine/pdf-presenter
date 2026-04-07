@@ -1,4 +1,4 @@
-# ⬡ PDF Presenter
+# PDF Presenter
 
 > Open-source PDF slide presenter with **real-time remote control** from any device.
 
@@ -7,44 +7,80 @@
 
 ---
 
-## ✨ Features
+## Features
 
 | Feature | Details |
 |---|---|
-| 📄 PDF Rendering | Full-quality rendering via PDF.js |
-| 📱 Remote Control | Control slides from a phone/tablet via QR code |
-| 🔄 Real-time Sync | WebSocket sync — all viewers stay in step |
-| ⌨️ Keyboard Nav | Arrow keys, Space, Page Up/Down |
-| 👆 Touch & Swipe | Works on tablets and touch screens |
-| 🌙 Dark / Light Mode | Toggle with one click |
-| 🗂️ Multi-PDF | Upload multiple PDFs and switch between them |
-| ⛶ Fullscreen | Distraction-free presentation mode |
-| 🎞️ Transitions | Smooth flash transition between slides |
-| 🖼️ Thumbnail Strip | Scrub through slides quickly |
+| PDF Rendering | Full-quality rendering via PDF.js (works offline) |
+| Remote Control | Control slides from phone/tablet via QR code |
+| Viewer Mode | View-only mode for audience (separate from remote) |
+| Real-time Sync | WebSocket sync — all viewers stay in step |
+| Keyboard Nav | Arrow keys, Space, Page Up/Down |
+| Touch & Swipe | Works on tablets and touch screens |
+| Dark / Light Mode | Toggle with one click |
+| Multi-PDF | Upload multiple PDFs and switch between them |
+| Fullscreen | Distraction-free presentation mode (presenter + viewer) |
+| Thumbnail Strip | Scrub through slides quickly |
+| Orientation | Choose portrait/landscape for optimal viewing |
+| Offline Ready | All vendor files bundled — no internet needed |
 
 ---
 
-## 🚀 Quick Start
+## Quick Start
 
-### Prerequisites
+### Automatic Installation (Recommended)
+
+#### Linux / macOS
+```bash
+git clone https://github.com/your-username/pdf-presenter
+cd pdf-presenter
+./linux-install.sh
+```
+
+#### Windows
+```batch
+git clone https://github.com/your-username/pdf-presenter
+cd pdf-presenter
+windows-install.bat
+```
+
+The install scripts will:
+- Check and install Node.js if needed
+- Install npm dependencies (skips if already installed)
+- Download offline vendor files
+- Create required directories
+- Launch the app automatically
+
+### Manual Installation
+
+#### Prerequisites
 
 - **Node.js 16+** — [Download here](https://nodejs.org)
 - Works on **Linux**, **macOS**, and **Windows**
 
-### 1. Clone or Download
+#### 1. Clone or Download
 
 ```bash
 git clone https://github.com/your-username/pdf-presenter
 cd pdf-presenter
 ```
 
-### 2. Install Dependencies
+#### 2. Install Dependencies
 
 ```bash
 npm install
 ```
 
-### 3. Start the Server
+#### 3. Download Vendor Files (for offline use)
+
+```bash
+mkdir -p public/vendor
+curl -L -o public/vendor/pdf.min.js https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
+curl -L -o public/vendor/pdf.worker.min.js https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
+curl -L -o public/vendor/qrious.min.js https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js
+```
+
+#### 4. Start the Server
 
 ```bash
 npm start
@@ -60,38 +96,59 @@ npm run dev
 
 ---
 
-## 📱 Using the Remote Control
+## Using Remote Control & Viewer
+
+### Remote Control (Phone/Tablet)
 
 1. Open `http://localhost:3000` in your **browser** (the presenter view)
 2. Upload a PDF using the drag-and-drop zone
-3. Click **📱 Remote** in the top bar
+3. Click **Remote** in the top bar
 4. **Scan the QR code** with your phone, OR copy the link and open it on another device
 5. Use the Prev / Next buttons on your phone to control slides in real-time
 
-> **On your local network:** Share `http://YOUR_LOCAL_IP:3000/remote.html?session=XXXX` with others on the same Wi-Fi to let them control or follow along.
+### Viewer Mode (Audience)
+
+1. Click **Viewer** in the top bar (separate from Remote)
+2. Choose **Portrait** or **Landscape** orientation based on your PDF layout
+3. Scan the QR code or share the link with your audience
+4. Viewers see the slides in real-time but cannot control them
+5. Viewers can tap the fullscreen button to enter fullscreen mode for better viewing
+
+> **Tip:** Use Viewer mode for audience screens, Remote mode for the presenter/assistant.
+
+> **On your local network:** Share `http://YOUR_LOCAL_IP:3000/viewer.html?session=XXXX` for view-only access.
 
 ---
 
-## 🗂️ Project Structure
+## Project Structure
 
 ```
 pdf-presenter/
-├── server.js           # Express + Socket.io server
-├── package.json        # Dependencies
-├── uploads/            # Auto-created; stores uploaded PDFs
+├── server.js              # Express + Socket.io server
+├── package.json           # Dependencies
+├── linux-install.sh       # Linux/macOS auto-installer
+├── windows-install.bat    # Windows auto-installer
+├── .gitignore             # Git ignore rules (excludes uploads/)
+├── uploads/               # Auto-created; stores uploaded PDFs
 └── public/
-    ├── index.html      # Presenter view
-    ├── remote.html     # Remote control (phone/tablet)
+    ├── index.html         # Presenter view
+    ├── viewer.html        # View-only mode for audience
+    ├── remote.html        # Remote control (phone/tablet)
     ├── css/
-    │   └── style.css   # All styles (dark/light themes)
-    └── js/
-        ├── presenter.js  # PDF rendering, navigation, upload logic
-        └── remote.js     # Remote control WebSocket client
+    │   └── style.css      # All styles (dark/light themes)
+    ├── js/
+    │   ├── presenter.js   # PDF rendering, navigation, upload logic
+    │   ├── viewer.js      # Viewer mode client
+    │   └── remote.js      # Remote control WebSocket client
+    └── vendor/            # Bundled libraries (offline ready)
+        ├── pdf.min.js
+        ├── pdf.worker.min.js
+        └── qrious.min.js
 ```
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 | Environment Variable | Default | Description |
 |---|---|---|
@@ -103,7 +160,7 @@ PORT=8080 npm start
 
 ---
 
-## 🌐 Network / Deployment
+## Network / Deployment
 
 ### Local Network (same Wi-Fi)
 
@@ -139,7 +196,7 @@ location / {
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## Keyboard Shortcuts
 
 | Key | Action |
 |---|---|
@@ -150,7 +207,7 @@ location / {
 
 ---
 
-## 🛠️ Tech Stack
+## Tech Stack
 
 | Layer | Technology |
 |---|---|
@@ -163,6 +220,6 @@ location / {
 
 ---
 
-## 📄 License
+## License
 
 MIT © 2024 — Free to use, modify, and distribute.

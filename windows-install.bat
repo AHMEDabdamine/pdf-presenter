@@ -66,14 +66,18 @@ echo.
 
 :: Install dependencies
 if exist "package.json" (
-    echo [INFO] Installing npm dependencies...
-    call npm install
-    if %ERRORLEVEL% NEQ 0 (
-        echo [ERROR] Failed to install dependencies
-        pause
-        exit /b 1
+    if exist "node_modules" (
+        echo [SUCCESS] Dependencies already installed ^(node_modules found^)
+    ) else (
+        echo [INFO] Installing npm dependencies...
+        call npm install
+        if !ERRORLEVEL! NEQ 0 (
+            echo [ERROR] Failed to install dependencies
+            pause
+            exit /b 1
+        )
+        echo [SUCCESS] Dependencies installed
     )
-    echo [SUCCESS] Dependencies installed
 ) else (
     echo [ERROR] package.json not found. Are you in the correct directory?
     pause

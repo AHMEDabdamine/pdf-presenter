@@ -120,9 +120,13 @@ install_dependencies() {
     cd "$SCRIPT_DIR"
     
     if [ -f "package.json" ]; then
-        print_status "Installing npm dependencies..."
-        npm install
-        print_success "Dependencies installed"
+        if [ -d "node_modules" ]; then
+            print_success "Dependencies already installed (node_modules found)"
+        else
+            print_status "Installing npm dependencies..."
+            npm install
+            print_success "Dependencies installed"
+        fi
     else
         print_error "package.json not found. Are you in the correct directory?"
         exit 1
