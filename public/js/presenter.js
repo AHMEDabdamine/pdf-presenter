@@ -47,6 +47,7 @@ const nextBtn = $("nextBtn");
 const slideStrip = $("slideStrip");
 const transOverlay = $("transitionOverlay");
 const laserDot = $("laserDot");
+const artificialCursor = $("artificialCursor");
 const remoteModal = $("remoteModal");
 const modalSessId = $("modalSessionId");
 const connCount = $("connectedCount");
@@ -118,6 +119,24 @@ function connectSocket() {
       laserDot.style.top = y * rect.height + "px";
     } else {
       laserDot.style.display = "none";
+    }
+  });
+
+  // Artificial cursor from remote
+  socket.on("cursor-move", ({ x, y, active }) => {
+    if (active) {
+      const rect = canvas.getBoundingClientRect();
+      const cursorX = x * rect.width;
+      const cursorY = y * rect.height;
+
+      // Use requestAnimationFrame for smoother updates
+      requestAnimationFrame(() => {
+        artificialCursor.style.left = cursorX + "px";
+        artificialCursor.style.top = cursorY + "px";
+        artificialCursor.classList.add("active");
+      });
+    } else {
+      artificialCursor.classList.remove("active");
     }
   });
 

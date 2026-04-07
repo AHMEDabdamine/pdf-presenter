@@ -163,7 +163,8 @@ app.get("/api/session/:sessionId", (req, res) => {
  */
 app.get("/api/pdfs", (_req, res) => {
   try {
-    const files = fs.readdirSync(UPLOAD_DIR)
+    const files = fs
+      .readdirSync(UPLOAD_DIR)
       .filter((f) => f.endsWith(".pdf"))
       .map((f) => ({ name: f, url: `/uploads/${f}` }));
     res.json(files);
@@ -213,15 +214,23 @@ io.on("connection", (socket) => {
     if (!session) return;
 
     if (typeof slide === "number") {
-      session.currentSlide = Math.max(1, Math.min(slide, session.totalSlides || slide));
+      session.currentSlide = Math.max(
+        1,
+        Math.min(slide, session.totalSlides || slide),
+      );
     } else if (direction === "next") {
-      session.currentSlide = Math.min(session.currentSlide + 1, session.totalSlides || 9999);
+      session.currentSlide = Math.min(
+        session.currentSlide + 1,
+        session.totalSlides || 9999,
+      );
     } else if (direction === "prev") {
       session.currentSlide = Math.max(session.currentSlide - 1, 1);
     }
 
     // Broadcast updated slide to ALL clients in the room (including sender)
-    io.to(sessionId).emit("slide-update", { currentSlide: session.currentSlide });
+    io.to(sessionId).emit("slide-update", {
+      currentSlide: session.currentSlide,
+    });
   });
 
   /**
@@ -241,9 +250,18 @@ io.on("connection", (socket) => {
     socket.to(sessionId).emit("pointer-update", { x, y, active });
   });
 
+  /**
+   * cursor-move: Remote broadcasts cursor position to presenter.
+   */
+  socket.on("cursor-move", ({ sessionId, x, y, active }) => {
+    socket.to(sessionId).emit("cursor-move", { x, y, active });
+  });
+
   socket.on("disconnect", () => {
     const { sessionId, role } = socket.data;
-    console.log(`[WS] ${role || "client"} disconnected from session ${sessionId}`);
+    console.log(
+      `[WS] ${role || "client"} disconnected from session ${sessionId}`,
+    );
   });
 });
 

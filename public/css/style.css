@@ -468,6 +468,58 @@ button {
   cursor: not-allowed;
 }
 
+/* ── Artificial Cursor ─────────────────────────────────── */
+.artificial-cursor {
+  position: absolute;
+  width: 24px;
+  height: 24px;
+  background: radial-gradient(
+    circle,
+    rgba(255, 0, 0, 0.9) 0%,
+    rgba(255, 0, 0, 0.5) 40%,
+    rgba(255, 0, 0, 0.2) 70%,
+    transparent 100%
+  );
+  border-radius: 50%;
+  pointer-events: none;
+  z-index: 15;
+  transform: translate(-50%, -50%);
+  transition: all 0.15s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  opacity: 0;
+  box-shadow:
+    0 0 20px rgba(255, 0, 0, 0.8),
+    0 0 40px rgba(255, 0, 0, 0.4),
+    inset 0 0 10px rgba(255, 0, 0, 0.3);
+}
+
+.artificial-cursor.active {
+  opacity: 1;
+  animation: cursorPulse 2s infinite;
+}
+
+@keyframes cursorPulse {
+  0%,
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.1);
+  }
+}
+
+.artificial-cursor::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 6px;
+  height: 6px;
+  background: #ff0000;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 10px rgba(255, 0, 0, 0.8);
+}
+
 /* ── Laser Dot ──────────────────────────────────────────── */
 .laser-dot {
   position: absolute;
@@ -823,6 +875,26 @@ button {
   border-radius: var(--radius-sm) !important;
 }
 
+/* Cursor Toggle Button */
+.rc-cursor-btn {
+  width: 40px !important;
+  height: 40px !important;
+  font-size: 1.1rem !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  min-width: 44px !important;
+  min-height: 44px !important;
+  background: var(--bg-3) !important;
+  border: 1px solid var(--border) !important;
+  border-radius: var(--radius-sm) !important;
+}
+
+.rc-cursor-btn.active {
+  background: var(--accent-glow) !important;
+  border-color: var(--accent) !important;
+  color: var(--accent) !important;
+}
+
 /* Mobile adjustments */
 @media (max-width: 600px) {
   .rc-fullscreen-btn {
@@ -833,6 +905,34 @@ button {
     min-height: 48px !important;
   }
 
+  .rc-cursor-btn {
+    width: 28px !important;
+    height: 28px !important;
+    font-size: 0.9rem !important;
+    color: var(--text) !important;
+    position: relative !important;
+    z-index: 1000 !important;
+    display: flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+  }
+
+  .rc-cursor-btn.active {
+    background: var(--accent-glow) !important;
+    color: var(--accent) !important;
+  }
+
+  @keyframes cursorButtonPulse {
+    0%,
+    100% {
+      transform: scale(1);
+      box-shadow: 0 0 25px rgba(240, 165, 0, 0.8);
+    }
+    50% {
+      transform: scale(1.05);
+      box-shadow: 0 0 35px rgba(240, 165, 0, 1);
+    }
+  }
   .rc-header {
     padding: 0 12px;
   }

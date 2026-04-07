@@ -22,6 +22,7 @@ const jumpBtn = $("jumpBtn");
 const rcDisconnect = $("rcDisconnect");
 const rcFullscreen = $("rcFullscreen");
 const rcHeaderFullscreen = $("rcHeaderFullscreen");
+const rcCursorToggle = $("rcCursorToggle");
 const toast = $("toast");
 const notesArea = $("notesArea");
 const notesFontDown = $("notesFontDown");
@@ -44,6 +45,8 @@ let sessionId = null;
 let currentSlide = 1;
 let totalSlides = 0;
 let notesFontSize = 16;
+let cursorActive = false;
+let cursorEnabled = false;
 
 // ── Auto-connect from URL param ───────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -144,6 +147,8 @@ jumpInput.addEventListener("keydown", (e) => {
 });
 
 // ── Swipe ─────────────────────────────────────────────────────────────────────
+// DISABLED: Commented out to prevent interference with cursor control
+/*
 let touchStartX = 0;
 document.addEventListener(
   "touchstart",
@@ -167,6 +172,7 @@ document.addEventListener(
   },
   { passive: true },
 );
+*/
 
 // Bluetooth clicker keyboard support
 document.addEventListener("keydown", (e) => {
@@ -310,6 +316,19 @@ rcHeaderFullscreen.addEventListener("click", () => {
   rcFsOverlay.requestFullscreen?.().catch(() => {});
 });
 
+// Cursor toggle button
+rcCursorToggle.addEventListener("click", () => {
+  cursorEnabled = !cursorEnabled;
+  rcCursorToggle.classList.toggle("active", cursorEnabled);
+
+  if (!cursorEnabled && cursorActive) {
+    // Hide cursor if it's currently active
+    handleCursorEnd();
+  }
+
+  showToast(cursorEnabled ? "👆 Cursor enabled" : "👆 Cursor disabled");
+});
+
 rfsExit.addEventListener("click", () => {
   rcFsOverlay.style.display = "none";
   if (document.fullscreenElement) document.exitFullscreen();
@@ -337,4 +356,87 @@ function showToast(msg) {
   toast.classList.add("show");
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => toast.classList.remove("show"), 3000);
+}
+
+// ── Cursor Control ─────────────────────────────────────────────────────────────
+let cursorDebounceTimer = null;
+
+function sendCursorMove(x, y, active) {
+  if (socket && socket.connected) {
+    socket.emit("cursor-move", { sessionId, x, y, active });
+  }
+}
+
+function handleCursorInteraction(e) {
+  if (!socket || !socket.connected || !cursorEnabled) return;
+
+  const rect = e.currentTarget.getBoundingClientRect();
+  const x = (e.clientX || e.touches[0].clientX - rect.left) / rect.width;
+  const y = (e.clientY || e.touches[0].clientY - rect.top) / rect.height;
+
+  // Normalize coordinates to 0-1 range
+  const normalizedX = Math.max(0, Math.min(1, x));
+  const normalizedY = Math.max(0, Math.min(1, y));
+
+  // Clear existing debounce timer
+  if (cursorDebounceTimer) {
+    clearTimeout(cursorDebounceTimer);
+  }
+
+  // Send immediately for smooth movement, but debounce to prevent flooding
+  sendCursorMove(normalizedX, normalizedY, true);
+
+  // Set up debounce for very rapid movements
+  cursorDebounceTimer = setTimeout(() => {
+    sendCursorMove(normalizedX, normalizedY, true);
+  }, 16); // ~60fps
+}
+
+function handleCursorEnd() {
+  cursorActive = false;
+  sendCursorMove(0, 0, false);
+}
+
+// Add cursor control to the control panel
+const controlPanel = document.querySelector(".rc-tab-panel");
+if (controlPanel) {
+  // Mouse events
+  controlPanel.addEventListener("mousedown", (e) => {
+    if (e.target.closest("button, input, textarea")) return;
+    cursorActive = true;
+    handleCursorInteraction(e);
+  });
+
+  controlPanel.addEventListener("mousemove", (e) => {
+    if (!cursorActive) return;
+    if (e.target.closest("button, input, textarea")) {
+      handleCursorEnd();
+      return;
+    }
+    handleCursorInteraction(e);
+  });
+
+  controlPanel.addEventListener("mouseup", handleCursorEnd);
+  controlPanel.addEventListener("mouseleave", handleCursorEnd);
+
+  // Touch events
+  controlPanel.addEventListener("touchstart", (e) => {
+    if (e.target.closest("button, input, textarea")) return;
+    cursorActive = true;
+    handleCursorInteraction(e);
+    e.preventDefault();
+  });
+
+  controlPanel.addEventListener("touchmove", (e) => {
+    if (!cursorActive) return;
+    if (e.target.closest("button, input, textarea")) {
+      handleCursorEnd();
+      return;
+    }
+    handleCursorInteraction(e);
+    e.preventDefault();
+  });
+
+  controlPanel.addEventListener("touchend", handleCursorEnd);
+  controlPanel.addEventListener("touchcancel", handleCursorEnd);
 }
