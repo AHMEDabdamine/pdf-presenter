@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, user-scalable=no"
+    />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <title>Viewer · PDF Presenter</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <!-- PDF.js (local) -->
+    <script src="/vendor/pdf.min.js"></script>
+    <!-- Socket.io -->
+    <script src="/socket.io/socket.io.js"></script>
+  </head>
+  <body class="viewer-page">
+    <!-- Connection screen -->
+    <div class="viewer-connect" id="viewerConnect">
+      <div class="vc-logo">⬡</div>
+      <h1>Join Presentation</h1>
+      <p>Enter the session ID to view the presentation</p>
+      <div class="vc-input-row">
+        <input
+          type="text"
+          id="sessionInput"
+          placeholder="e.g. A1B2C3D4"
+          maxlength="8"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <button class="btn btn-primary" id="connectBtn">Join</button>
+      </div>
+      <p class="vc-hint" id="vcHint"></p>
+    </div>
+
+    <!-- Slide view (shown after connected) -->
+    <div class="viewer-slide" id="viewerSlide" style="display: none">
+      <div class="vs-header" id="vsHeader">
+        <span class="vs-session-badge" id="vsSessionBadge">—</span>
+        <span class="vs-status connected" id="vsStatusDot">● Live</span>
+        <button class="vs-fullscreen-btn" id="vsFullscreenBtn" title="Fullscreen">⛶</button>
+      </div>
+
+      <!-- Slide canvas container -->
+      <div class="vs-canvas-wrap" id="vsCanvasWrap">
+        <canvas id="viewerCanvas"></canvas>
+        <div class="vs-waiting" id="vsWaiting" style="display: none">
+          <div class="vs-waiting-icon">⏳</div>
+          <span>Waiting for presenter to upload PDF...</span>
+          <p class="vs-waiting-hint">Make sure you're scanning the QR code from the current presenter session. If the presenter reloaded, scan the new QR code.</p>
+          <button class="vs-waiting-btn" onclick="location.reload()">🔄 Refresh Session</button>
+        </div>
+        <div class="vs-loading" id="vsLoading" style="display: none">
+          <div class="vs-spinner"></div>
+          <span>Loading slide...</span>
+        </div>
+        <div class="vs-error" id="vsError" style="display: none">
+          <div class="vs-error-icon">⚠️</div>
+          <span id="vsErrorText">Error loading PDF</span>
+        </div>
+      </div>
+
+      <!-- Slide counter overlay -->
+      <div class="vs-counter" id="vsCounter">— / —</div>
+
+      <!-- Reconnecting overlay -->
+      <div class="vs-reconnecting" id="vsReconnecting" style="display: none">
+        <div class="vs-spinner"></div>
+        <span>Reconnecting...</span>
+      </div>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <script src="/js/viewer.js"></script>
+  </body>
+</html>

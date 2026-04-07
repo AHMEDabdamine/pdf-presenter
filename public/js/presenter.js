@@ -23,7 +23,9 @@ const state = {
   totalSlides: 0,
   rendering: false,
   remoteUrl: null,
+  viewerUrl: null,
   connectedRemotes: 0,
+  connectedViewers: 0,
   renderTask: null,
 };
 
@@ -64,6 +66,7 @@ async function initSession() {
 
     state.sessionId = data.sessionId;
     state.remoteUrl = data.remoteUrl;
+    state.viewerUrl = data.viewerUrl;
 
     // Update UI badges
     sessionBadge.textContent = data.sessionId;
@@ -107,7 +110,7 @@ function connectSocket() {
 
   // New PDF loaded (from another tab / device)
   socket.on("pdf-loaded", ({ pdfUrl, filename }) => {
-    loadPdfFromUrl(pdfUrl, filename);
+    loadPdfFromUrl(pdfUrl, filename, { skipNotify: true });
   });
 
   // Laser pointer from remote
@@ -146,7 +149,13 @@ function connectSocket() {
   // Count remotes via our own tracking
   socket.on("remote-count", ({ count }) => {
     state.connectedRemotes = count;
-    connCount.textContent = `${count} remote(s) connected`;
+    connCount.textContent = `${count} remote(s) connected · ${state.connectedViewers} viewer(s)`;
+  });
+
+  // Track viewer count
+  socket.on("viewer-count", ({ count }) => {
+    state.connectedViewers = count;
+    connCount.textContent = `${state.connectedRemotes} remote(s) connected · ${count} viewer(s)`;
   });
 }
 
@@ -228,7 +237,7 @@ async function uploadFile(file) {
 
 // ─── PDF Rendering ────────────────────────────────────────────────────────────
 
-async function loadPdfFromUrl(url, filename = "") {
+async function loadPdfFromUrl(url, filename = "", { skipNotify = false } = {}) {
   try {
     const loadingTask = pdfjsLib.getDocument(url);
     const pdfDoc = await loadingTask.promise;
@@ -237,11 +246,18 @@ async function loadPdfFromUrl(url, filename = "") {
     state.totalSlides = pdfDoc.numPages;
     state.currentSlide = 1;
 
-    // Tell the server about total slides for this session
-    if (socket?.connected) {
+    // Tell the server about total slides and PDF file for this session
+    // Skip notification when loading from server broadcast (prevents loop)
+    if (socket?.connected && !skipNotify) {
       socket.emit("set-total-slides", {
         sessionId: state.sessionId,
         totalSlides: pdfDoc.numPages,
+      });
+      // Also notify about the PDF file so viewers can access it
+      socket.emit("pdf-file-loaded", {
+        sessionId: state.sessionId,
+        pdfUrl: url,
+        filename: filename || "Presentation.pdf",
       });
     }
 
@@ -639,8 +655,8 @@ function closeRemoteModal() {
  * Build the remote URL, optionally swapping the host with a user-supplied IP.
  * This lets the QR code point to the machine's LAN IP instead of localhost.
  */
-function buildRemoteUrl(ipOverride) {
-  const base = state.remoteUrl; // e.g. http://localhost:3000/remote.html?session=XXXX
+function buildRemoteUrl(ipOverride, urlType = "remote") {
+  const base = urlType === "viewer" ? state.viewerUrl : state.remoteUrl;
   if (!ipOverride) return base;
   try {
     const u = new URL(base);
@@ -653,19 +669,37 @@ function buildRemoteUrl(ipOverride) {
 }
 
 function refreshQR(ipOverride) {
-  const url = buildRemoteUrl(ipOverride);
-  state.remoteUrl = url; // update so copy button uses the right URL
-  remoteUrlEl.textContent = url;
+  // Update remote QR
+  const remoteUrl = buildRemoteUrl(ipOverride, "remote");
+  state.remoteUrl = remoteUrl;
+
+  // Update viewer QR
+  const viewerUrl = buildRemoteUrl(ipOverride, "viewer");
+  state.viewerUrl = viewerUrl;
+
+  remoteUrlEl.textContent = remoteUrl;
 
   // Regenerate QR via QRious (client-side, always available)
   try {
     new QRious({
       element: qrCanvas,
-      value: url,
+      value: remoteUrl,
       size: 200,
       background: "#ffffff",
       foreground: "#1a1a2e",
     });
+
+    // Update viewer QR if canvas exists
+    const viewerQrCanvas = $("viewerQrCanvas");
+    if (viewerQrCanvas && state.viewerUrl) {
+      new QRious({
+        element: viewerQrCanvas,
+        value: viewerUrl,
+        size: 200,
+        background: "#ffffff",
+        foreground: "#1a1a2e",
+      });
+    }
   } catch (e) {
     console.error("QR generation failed:", e);
   }
@@ -708,6 +742,110 @@ $("copyUrlBtn").addEventListener("click", () => {
     .writeText(state.remoteUrl)
     .then(() => showToast("✓ Link copied to clipboard"))
     .catch(() => showToast("⚠ Copy failed — select the URL manually"));
+});
+
+// ─── Viewer Modal & QR ───────────────────────────────────────────────────────
+
+const viewerModal = $("viewerModal");
+let currentOrientation = localStorage.getItem("presenter-orientation") || "landscape";
+
+// Initialize orientation buttons
+function updateOrientationButtons() {
+  const landscapeBtn = $("orientLandscape");
+  const portraitBtn = $("orientPortrait");
+  if (landscapeBtn && portraitBtn) {
+    landscapeBtn.classList.toggle("active", currentOrientation === "landscape");
+    portraitBtn.classList.toggle("active", currentOrientation === "portrait");
+  }
+}
+
+$("showViewerBtn").addEventListener("click", () => {
+  viewerModal.style.display = "flex";
+  updateOrientationButtons();
+  // Refresh viewer QR with current orientation
+  const savedIp = localStorage.getItem("presenter-ip");
+  refreshViewerQR(savedIp || null);
+});
+
+$("closeViewerModal").addEventListener("click", closeViewerModal);
+viewerModal.addEventListener("click", (e) => {
+  if (e.target === viewerModal) closeViewerModal();
+});
+
+function closeViewerModal() {
+  viewerModal.style.display = "none";
+}
+
+// Orientation toggle buttons
+$("orientLandscape").addEventListener("click", () => {
+  currentOrientation = "landscape";
+  localStorage.setItem("presenter-orientation", currentOrientation);
+  updateOrientationButtons();
+  showToast("✓ Orientation set to Landscape");
+  // Update URL with orientation parameter
+  const savedIp = localStorage.getItem("presenter-ip");
+  refreshViewerQR(savedIp || null);
+});
+
+$("orientPortrait").addEventListener("click", () => {
+  currentOrientation = "portrait";
+  localStorage.setItem("presenter-orientation", currentOrientation);
+  updateOrientationButtons();
+  showToast("✓ Orientation set to Portrait");
+  // Update URL with orientation parameter
+  const savedIp = localStorage.getItem("presenter-ip");
+  refreshViewerQR(savedIp || null);
+});
+
+function refreshViewerQR(ipOverride) {
+  if (!state.viewerUrl) return;
+  
+  // Build URL with orientation parameter
+  let viewerUrl = buildRemoteUrl(ipOverride, "viewer");
+  const url = new URL(viewerUrl);
+  url.searchParams.set("orient", currentOrientation);
+  viewerUrl = url.toString();
+  
+  // Update display
+  const viewerUrlDisplay = $("viewerUrlDisplay");
+  if (viewerUrlDisplay) viewerUrlDisplay.textContent = viewerUrl;
+  
+  // Update viewer count display
+  const viewerCountEl = $("viewerCount");
+  if (viewerCountEl) {
+    viewerCountEl.textContent = `${state.connectedViewers} viewer(s) connected`;
+  }
+  
+  // Update session ID
+  const viewerModalSessionId = $("viewerModalSessionId");
+  if (viewerModalSessionId) viewerModalSessionId.textContent = state.sessionId || "—";
+  
+  // Generate QR
+  const viewerQrCanvas = $("viewerQrCanvas");
+  if (viewerQrCanvas) {
+    try {
+      new QRious({
+        element: viewerQrCanvas,
+        value: viewerUrl,
+        size: 200,
+        background: "#ffffff",
+        foreground: "#1a1a2e",
+      });
+    } catch (e) {
+      console.error("Viewer QR generation failed:", e);
+    }
+  }
+}
+
+$("copyViewerUrlBtn").addEventListener("click", () => {
+  if (!state.viewerUrl) return;
+  // Build URL with orientation
+  const url = new URL(buildRemoteUrl(null, "viewer"));
+  url.searchParams.set("orient", currentOrientation);
+  navigator.clipboard
+    .writeText(url.toString())
+    .then(() => showToast("✓ Viewer link copied"))
+    .catch(() => showToast("⚠ Copy failed"));
 });
 
 // ─── Theme Toggle ─────────────────────────────────────────────────────────────

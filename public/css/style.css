@@ -1464,3 +1464,435 @@ button {
     display: none;
   }
 }
+
+/* ══════════════════════════════════════════════════════════
+   QR SECTIONS (Dual QR layout)
+   ══════════════════════════════════════════════════════════ */
+
+.qr-sections {
+  display: flex;
+  gap: 24px;
+  justify-content: center;
+  margin: 16px 0;
+}
+
+.qr-section {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.qr-label {
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text-2);
+  margin: 0;
+}
+
+.qr-desc {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  margin: 0;
+}
+
+@media (max-width: 600px) {
+  .qr-sections {
+    flex-direction: column;
+    gap: 16px;
+  }
+}
+
+/* ══════════════════════════════════════════════════════════
+   VIEWER PAGE
+   ══════════════════════════════════════════════════════════ */
+
+.viewer-page {
+  background: var(--bg);
+  min-height: 100vh;
+}
+
+/* ── Viewer Connect Screen ─────────────────────────────────────────── */
+
+.viewer-connect {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  padding: 24px;
+  text-align: center;
+}
+
+.vc-logo {
+  font-size: 3rem;
+  margin-bottom: 16px;
+}
+
+.viewer-connect h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.viewer-connect > p {
+  color: var(--text-2);
+  margin-bottom: 24px;
+  font-size: 0.95rem;
+}
+
+.vc-input-row {
+  display: flex;
+  gap: 8px;
+  width: 100%;
+  max-width: 320px;
+}
+
+.vc-input-row input {
+  flex: 1;
+  padding: 12px 16px;
+  font-size: 1rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+  color: var(--text);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.vc-input-row input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.vc-hint {
+  margin-top: 12px;
+  font-size: 0.875rem;
+  min-height: 1.2em;
+}
+
+/* ── Viewer Slide View ────────────────────────────────────────────── */
+
+.viewer-slide {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.vs-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: var(--bg-2);
+  border-bottom: 1px solid var(--border);
+}
+
+.vs-session-badge {
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  color: var(--text-2);
+  background: var(--bg-3);
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+}
+
+.vs-status {
+  font-size: 0.8rem;
+  font-weight: 500;
+}
+
+.vs-status.connected {
+  color: var(--success);
+}
+
+.vs-status.disconnected {
+  color: var(--danger);
+}
+
+.vs-canvas-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg);
+  position: relative;
+  overflow: hidden;
+  padding: 16px;
+}
+
+#viewerCanvas {
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+  box-shadow: var(--shadow);
+  background: white;
+  object-fit: contain;
+}
+
+.vs-waiting {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: var(--bg);
+  color: var(--text-2);
+  font-size: 0.95rem;
+}
+
+.vs-waiting-icon {
+  font-size: 3rem;
+}
+
+.vs-loading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  color: var(--text);
+  font-size: 0.875rem;
+}
+
+.vs-error {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  background: var(--bg);
+  color: var(--danger);
+  font-size: 0.9rem;
+  text-align: center;
+  padding: 20px;
+}
+
+.vs-error-icon {
+  font-size: 2.5rem;
+}
+
+.vs-waiting-hint {
+  font-size: 0.8rem;
+  color: var(--text-3);
+  max-width: 280px;
+  text-align: center;
+  margin-top: 8px;
+  line-height: 1.4;
+}
+
+.vs-waiting-btn {
+  margin-top: 16px;
+  padding: 10px 20px;
+  background: var(--accent);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  cursor: pointer;
+}
+
+.vs-spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.vs-counter {
+  position: absolute;
+  bottom: 16px;
+  right: 16px;
+  background: rgba(0, 0, 0, 0.7);
+  color: var(--text);
+  padding: 6px 12px;
+  border-radius: var(--radius-sm);
+  font-family: var(--font-mono);
+  font-size: 0.875rem;
+  backdrop-filter: blur(4px);
+}
+
+.vs-reconnecting {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  background: rgba(14, 14, 18, 0.9);
+  color: var(--text);
+  z-index: 1000;
+}
+
+.vs-fullscreen-btn {
+  background: transparent;
+  border: none;
+  color: var(--text-2);
+  font-size: 1.25rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  transition: all 0.2s ease;
+}
+
+.vs-fullscreen-btn:hover {
+  background: var(--bg-3);
+  color: var(--accent);
+}
+
+/* Fullscreen mode styles */
+.viewer-slide.fs-mode {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 9999;
+}
+
+.viewer-slide.fs-mode .vs-header {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 10;
+  background: rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(4px);
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.viewer-slide.fs-mode .vs-header:hover {
+  opacity: 1;
+}
+
+.viewer-slide.fs-mode .vs-canvas-wrap {
+  height: 100vh;
+  background: black;
+}
+
+/* Orientation-based sizing */
+.orient-portrait .vs-canvas-wrap {
+  max-width: 100%;
+}
+
+.orient-landscape .vs-canvas-wrap {
+  max-height: 100%;
+}
+
+/* Fullscreen with portrait orientation - maximize width */
+.viewer-slide.fs-mode.orient-portrait #viewerCanvas {
+  max-width: 100%;
+  max-height: none;
+  width: 100%;
+  height: auto;
+}
+
+/* Fullscreen with landscape orientation - maximize height */
+.viewer-slide.fs-mode.orient-landscape #viewerCanvas {
+  max-width: none;
+  max-height: 100%;
+  width: auto;
+  height: 100%;
+}
+
+/* ══════════════════════════════════════════════════════════
+   ORIENTATION TOGGLE (Viewer Modal)
+   ══════════════════════════════════════════════════════════ */
+
+.orientation-row {
+  margin: 16px 0;
+  padding: 16px;
+  background: var(--bg-2);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.orientation-label {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 12px;
+}
+
+.orientation-toggle {
+  display: flex;
+  gap: 8px;
+}
+
+.orientation-btn {
+  flex: 1;
+  padding: 10px 16px;
+  font-size: 0.875rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--bg);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.orientation-btn:hover {
+  background: var(--bg-3);
+  border-color: var(--accent);
+}
+
+.orientation-btn.active {
+  background: var(--accent);
+  color: var(--bg);
+  border-color: var(--accent);
+}
+
+.orientation-hint {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-3);
+}
+
+/* ══════════════════════════════════════════════════════════
+   QR SINGLE (Single QR layout for separate modals)
+   ══════════════════════════════════════════════════════════ */
+
+.qr-single {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  margin: 20px 0;
+}
+
+.qr-single canvas {
+  max-width: 200px;
+  max-height: 200px;
+}

@@ -57,7 +57,7 @@ const upload = multer({
 // ─── In-Memory Session Store ──────────────────────────────────────────────────
 
 /**
- * sessions: Map<sessionId, { currentSlide, totalSlides, pdfFile, connectedClients }>
+ * sessions: Map<sessionId, { currentSlide, totalSlides, pdfFile, presenterSocket, connectedViewers }>
  * A "session" ties together a presenter and all remote viewers.
  */
 const sessions = new Map();
@@ -69,6 +69,7 @@ function getOrCreateSession(sessionId) {
       totalSlides: 0,
       pdfFile: null,
       presenterSocket: null,
+      connectedViewers: new Set(),
     });
   }
   return sessions.get(sessionId);
@@ -99,8 +100,18 @@ app.post("/api/session", async (req, res) => {
 
   // Generate QR code as data URL
   let qrDataUrl = null;
+  let viewerUrl = null;
+  let viewerQrDataUrl = null;
   try {
     qrDataUrl = await QRCode.toDataURL(remoteUrl, {
+      width: 256,
+      margin: 2,
+      color: { dark: "#1a1a2e", light: "#ffffff" },
+    });
+
+    // Generate viewer URL and QR
+    viewerUrl = `${protocol}://${host}/viewer.html?session=${sessionId}`;
+    viewerQrDataUrl = await QRCode.toDataURL(viewerUrl, {
       width: 256,
       margin: 2,
       color: { dark: "#1a1a2e", light: "#ffffff" },
@@ -109,7 +120,7 @@ app.post("/api/session", async (req, res) => {
     console.error("QR generation failed:", e.message);
   }
 
-  res.json({ sessionId, remoteUrl, qrDataUrl });
+  res.json({ sessionId, remoteUrl, qrDataUrl, viewerUrl, viewerQrDataUrl });
 });
 
 /**
@@ -179,8 +190,8 @@ io.on("connection", (socket) => {
   console.log(`[WS] Client connected: ${socket.id}`);
 
   /**
-   * join-session: Called by both presenter and remote clients.
-   * role: "presenter" | "remote"
+   * join-session: Called by presenter, remote, or viewer clients.
+   * role: "presenter" | "remote" | "viewer"
    */
   socket.on("join-session", ({ sessionId, role }) => {
     if (!sessionId) return;
@@ -193,6 +204,14 @@ io.on("connection", (socket) => {
 
     if (role === "presenter") {
       session.presenterSocket = socket.id;
+    } else if (role === "viewer") {
+      session.connectedViewers.add(socket.id);
+      // Notify presenter of viewer count change
+      if (session.presenterSocket) {
+        io.to(session.presenterSocket).emit("viewer-count", {
+          count: session.connectedViewers.size,
+        });
+      }
     }
 
     console.log(`[WS] ${role} joined session ${sessionId}`);
@@ -244,10 +263,38 @@ io.on("connection", (socket) => {
   });
 
   /**
-   * pointer-event: Presenter broadcasts laser pointer position to all remotes.
+   * pdf-file-loaded: Presenter notifies server when loading PDF from library
    */
-  socket.on("pointer-event", ({ sessionId, x, y, active }) => {
-    socket.to(sessionId).emit("pointer-update", { x, y, active });
+  socket.on("pdf-file-loaded", ({ sessionId, pdfUrl, filename }) => {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    
+    // Extract filename from URL (e.g., "/uploads/12345-file.pdf" -> "12345-file.pdf")
+    const pdfFile = pdfUrl.split("/").pop();
+    session.pdfFile = pdfFile;
+    
+    console.log(`[WS] PDF loaded in session ${sessionId}: ${filename}`);
+    
+    // Notify all clients in the room about the new PDF
+    io.to(sessionId).emit("pdf-loaded", {
+      pdfUrl: `/uploads/${pdfFile}`,
+      filename,
+      currentSlide: 1,
+      totalSlides: session.totalSlides,
+    });
+  });
+  /**
+   * request-session-state: Client requests current session state (for recovery)
+   */
+  socket.on("request-session-state", ({ sessionId }) => {
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    
+    socket.emit("session-state", {
+      currentSlide: session.currentSlide,
+      totalSlides: session.totalSlides,
+      pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+    });
   });
 
   /**
@@ -262,6 +309,18 @@ io.on("connection", (socket) => {
     console.log(
       `[WS] ${role || "client"} disconnected from session ${sessionId}`,
     );
+
+    // Remove viewer from tracking
+    if (role === "viewer" && sessionId && sessions.has(sessionId)) {
+      const session = sessions.get(sessionId);
+      session.connectedViewers.delete(socket.id);
+      // Notify presenter of viewer count change
+      if (session.presenterSocket) {
+        io.to(session.presenterSocket).emit("viewer-count", {
+          count: session.connectedViewers.size,
+        });
+      }
+    }
   });
 });
 

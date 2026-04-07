@@ -5,12 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PDF Presenter</title>
     <link rel="stylesheet" href="/css/style.css" />
-    <!-- PDF.js from CDN -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <!-- PDF.js (local) -->
+    <script src="/vendor/pdf.min.js"></script>
     <!-- Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
-    <!-- QRious for client-side QR (fallback) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <!-- QRious (local) -->
+    <script src="/vendor/qrious.min.js"></script>
   </head>
   <body class="presenter-page">
     <!-- ── Top Bar ─────────────────────────────────────────────────── -->
@@ -37,6 +37,13 @@
           title="Show remote QR"
         >
           📱 Remote
+        </button>
+        <button
+          class="btn btn-secondary"
+          id="showViewerBtn"
+          title="Show viewer QR"
+        >
+          👁️ Viewer
         </button>
       </div>
     </header>
@@ -128,7 +135,10 @@
           </p>
         </div>
 
-        <canvas id="qrCanvas"></canvas>
+        <div class="qr-single">
+          <canvas id="qrCanvas"></canvas>
+          <p class="qr-desc">Control slides from your phone</p>
+        </div>
         <p class="remote-url" id="remoteUrlDisplay">—</p>
 
         <div class="remote-stats">
@@ -136,6 +146,43 @@
           <span id="connectedCount">0 remote(s) connected</span>
         </div>
         <button class="btn btn-copy" id="copyUrlBtn">Copy Link</button>
+      </div>
+    </div>
+
+    <!-- ── Viewer Modal ─────────────────────────────────────────────── -->
+    <div class="modal-backdrop" id="viewerModal" style="display: none">
+      <div class="modal-card">
+        <button class="modal-close" id="closeViewerModal">✕</button>
+        <h2>👁️ Viewer</h2>
+        <p class="modal-sub">Scan with your phone to view slides only</p>
+
+        <!-- Orientation selector -->
+        <div class="orientation-row">
+          <label class="orientation-label">Presentation Orientation:</label>
+          <div class="orientation-toggle">
+            <button class="orientation-btn active" id="orientLandscape" data-orient="landscape">
+              🖥️ Landscape
+            </button>
+            <button class="orientation-btn" id="orientPortrait" data-orient="portrait">
+              📱 Portrait
+            </button>
+          </div>
+          <p class="orientation-hint">
+            Choose based on your PDF slide orientation for best viewing
+          </p>
+        </div>
+
+        <div class="qr-single">
+          <canvas id="viewerQrCanvas"></canvas>
+          <p class="qr-desc">View slides on your phone (no control)</p>
+        </div>
+        <p class="remote-url" id="viewerUrlDisplay">—</p>
+
+        <div class="remote-stats">
+          <span>Session: <strong id="viewerModalSessionId">—</strong></span>
+          <span id="viewerCount">0 viewer(s) connected</span>
+        </div>
+        <button class="btn btn-copy" id="copyViewerUrlBtn">Copy Link</button>
       </div>
     </div>
 
