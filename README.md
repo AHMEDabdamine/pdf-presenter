@@ -32,9 +32,9 @@ Watch this complete video guide to learn how to install and use PDF Presenter:
 
 ### Installation & Usage Guide
 
-[Watch the Video Tutorial](https://github.com/AHMEDabdamine/pdf-presenter/releases/download/v1.0.0/explanation.mp4)
+[![Watch the Video Tutorial](https://img.youtube.com/vi/KxRDcmIOq4s/0.jpg)](https://youtu.be/KxRDcmIOq4s)
 
-_[Note: To view the video, click the link above. It demonstrates setup, remote control, and all key features.]_
+_[Watch the Complete Setup and Usage Guide on YouTube]_
 
 This video covers:
 
@@ -61,7 +61,7 @@ cd pdf-presenter
 #### Windows
 
 ```batch
-git clone https://github.com/AHMEDabdamine/pdf-presenter.gitr
+git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 windows-install.bat
 ```
