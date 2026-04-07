@@ -71,16 +71,9 @@ cd pdf-presenter
 npm install
 ```
 
-#### 3. Download Vendor Files (for offline use)
 
-```bash
-mkdir -p public/vendor
-curl -L -o public/vendor/pdf.min.js https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js
-curl -L -o public/vendor/pdf.worker.min.js https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js
-curl -L -o public/vendor/qrious.min.js https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js
-```
 
-#### 4. Start the Server
+#### 3. Start the Server
 
 ```bash
 npm start
