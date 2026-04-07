@@ -84,43 +84,6 @@ if exist "package.json" (
     exit /b 1
 )
 
-:: Create uploads directory
-if not exist "uploads" (
-    echo [INFO] Creating uploads directory...
-    mkdir uploads
-    type nul > uploads\.gitkeep
-)
-
-:: Download vendor files if not present
-if not exist "public\vendor\pdf.min.js" (
-    echo [INFO] Downloading vendor files...
-    if not exist "public\vendor" mkdir public\vendor
-    
-    echo [INFO] Downloading PDF.js...
-    powershell -Command "Invoke-WebRequest -Uri 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js' -OutFile 'public\vendor\pdf.min.js' -UseBasicParsing" 2>nul
-    if exist "public\vendor\pdf.min.js" (
-        echo [SUCCESS] PDF.js downloaded
-    ) else (
-        echo [WARNING] Failed to download PDF.js. App may not work offline.
-    )
-    
-    echo [INFO] Downloading PDF.js worker...
-    powershell -Command "Invoke-WebRequest -Uri 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js' -OutFile 'public\vendor\pdf.worker.min.js' -UseBasicParsing" 2>nul
-    if exist "public\vendor\pdf.worker.min.js" (
-        echo [SUCCESS] PDF.js worker downloaded
-    ) else (
-        echo [WARNING] Failed to download PDF.js worker.
-    )
-    
-    echo [INFO] Downloading QRious...
-    powershell -Command "Invoke-WebRequest -Uri 'https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js' -OutFile 'public\vendor\qrious.min.js' -UseBasicParsing" 2>nul
-    if exist "public\vendor\qrious.min.js" (
-        echo [SUCCESS] QRious downloaded
-    ) else (
-        echo [WARNING] Failed to download QRious.
-    )
-)
-
 echo.
 echo ==========================================
 echo    Installation Complete!
