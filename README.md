@@ -32,8 +32,7 @@ Watch this complete video guide to learn how to install and use PDF Presenter:
 
 ### Installation & Usage Guide
 
-https://github.com/user-attachments/assets/12345678-1234-1234-1234-123456789012
-
+![installation_guide](explanation.mp4)
 _[Video: explanation.mp4 - Complete setup and usage demonstration]_
 
 This video covers:
