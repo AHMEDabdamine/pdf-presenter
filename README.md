@@ -157,6 +157,10 @@ PORT=8080 npm start
 
 ### Local Network (same Wi-Fi)
 
+All devices connect to the same Wi-Fi router. The laptop runs the Node.js server and hosts the presentation. Remote phones and viewers connect via HTTP/WebSocket on port 3000.
+
+![Network Diagram](pdf_presenter_device_network.svg)
+
 Find your machine's local IP:
 - **Linux/macOS:** `ip addr` or `ifconfig`
 - **Windows:** `ipconfig`
