@@ -57,6 +57,7 @@ This video covers:
 git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 ./linux-install.sh
+./start-app.sh
 ```
 
 #### Windows
@@ -65,6 +66,7 @@ cd pdf-presenter
 git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 windows-install.bat
+start-app.bat
 ```
 
 The install scripts will:

@@ -89,33 +89,10 @@ echo ==========================================
 echo    Installation Complete!
 echo ==========================================
 echo.
-
-:: Get IP addresses
-for /f "tokens=2 delims=:" %%a in ('ipconfig ^| findstr /C:"IPv4 Address"') do (
-    set "IP=%%a"
-    set "IP=!IP: =!"
-    echo Network IP: !IP!
-)
-
+echo You can now start the application by running:
+echo    start-app.bat
 echo.
-echo The app will be available at:
-echo   - Local:    http://localhost:3000
-echo   - Network:  http://%IP%:3000 (if on same network)
-echo.
-echo Press Ctrl+C to stop the server
-echo.
-echo [INFO] Starting %APP_NAME%...
-
-:: Launch the app
-call npm start
-
-:: If npm start fails, pause to show error
-if %ERRORLEVEL% NEQ 0 (
-    echo.
-    echo [ERROR] Application exited with error
-    pause
-)
-
+pause
 exit /b 0
 
 :: ==========================================

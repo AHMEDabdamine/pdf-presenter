@@ -142,30 +142,6 @@ setup_directories() {
     fi
 }
 
-# Launch the application
-launch_app() {
-    print_success "Installation complete!"
-    echo ""
-    echo "=========================================="
-    echo "  Starting $APP_NAME..."
-    echo "=========================================="
-    echo ""
-    
-    # Get IP addresses for display
-    IP_ADDRESSES=$(hostname -I 2>/dev/null | tr ' ' '\n' | head -5 || echo "localhost")
-    
-    echo "The app will be available at:"
-    echo "  - Local:    http://localhost:3000"
-    for ip in $IP_ADDRESSES; do
-        echo "  - Network:  http://$ip:3000"
-    done
-    echo ""
-    echo "Press Ctrl+C to stop the server"
-    echo ""
-    
-    npm start
-}
-
 # Main installation flow
 main() {
     # Check and install Node.js
@@ -204,8 +180,12 @@ main() {
         print_success "Vendor files downloaded"
     fi
     
-    # Launch the app
-    launch_app
+    # Final message
+    print_success "Installation complete!"
+    echo ""
+    echo "You can now start the application by running:"
+    echo "  ./start-app.sh"
+    echo ""
 }
 
 # Run main function
