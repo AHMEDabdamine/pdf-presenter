@@ -22,6 +22,7 @@
 | Fullscreen        | Distraction-free presentation mode (presenter + viewer) |
 | Thumbnail Strip   | Scrub through slides quickly                            |
 | Orientation       | Choose portrait/landscape for optimal viewing           |
+| Session Access    | Easy /access page to join active sessions directly      |
 | Offline Ready     | All vendor files bundled — no internet needed           |
 
 ---

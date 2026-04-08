@@ -1,0 +1,167 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Access Session - PDF Presenter</title>
+    <link rel="stylesheet" href="/css/style.css" />
+    <style>
+      .access-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        min-height: 100vh;
+        padding: 20px;
+        text-align: center;
+      }
+      .access-card {
+        background: var(--bg-2);
+        padding: 40px;
+        border-radius: var(--radius-lg);
+        border: 1px solid var(--border);
+        box-shadow: var(--shadow-lg);
+        max-width: 450px;
+        width: 100%;
+      }
+      .access-card h1 {
+        margin-bottom: 12px;
+        font-size: 1.8rem;
+        color: var(--text);
+      }
+      .access-card p {
+        color: var(--text-2);
+        margin-bottom: 30px;
+        font-size: 0.95rem;
+      }
+      .session-list {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 20px;
+      }
+      .session-item {
+        background: var(--bg-3);
+        border: 1px solid var(--border-2);
+        border-radius: var(--radius);
+        padding: 20px;
+        text-align: left;
+        transition:
+          transform 0.2s,
+          border-color 0.2s;
+      }
+      .session-item:hover {
+        transform: translateY(-2px);
+        border-color: var(--accent);
+      }
+      .session-info {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .session-id {
+        font-family: var(--font-mono);
+        font-weight: 800;
+        color: var(--accent);
+        font-size: 1.2rem;
+      }
+      .session-filename {
+        font-size: 0.85rem;
+        color: var(--text-3);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        max-width: 200px;
+      }
+      .action-buttons {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+      }
+      .no-sessions {
+        padding: 30px;
+        color: var(--text-3);
+        font-style: italic;
+      }
+      .refresh-btn {
+        margin-top: 20px;
+        background: transparent;
+        border: 1px solid var(--border);
+        color: var(--text-2);
+        padding: 8px 16px;
+        border-radius: var(--radius-sm);
+        cursor: pointer;
+        font-size: 0.85rem;
+      }
+      .refresh-btn:hover {
+        background: var(--bg-3);
+        color: var(--text);
+      }
+    </style>
+  </head>
+  <body class="access-page">
+    <div class="access-container">
+      <div class="access-card">
+        <div class="setup-logo" style="margin: 0 auto 20px">⬡</div>
+        <h1>Access Session</h1>
+        <p>
+          Select an active presentation session to join as a viewer or
+          controller.
+        </p>
+
+        <div id="sessionList" class="session-list">
+          <div class="no-sessions">Loading active sessions...</div>
+        </div>
+
+        <button class="refresh-btn" onclick="fetchSessions()">
+          ↻ Refresh List
+        </button>
+      </div>
+    </div>
+
+    <script>
+      async function fetchSessions() {
+        const listEl = document.getElementById("sessionList");
+        try {
+          const res = await fetch("/api/sessions");
+          const data = await res.json();
+
+          if (!data.sessions || data.sessions.length === 0) {
+            listEl.innerHTML =
+              '<div class="no-sessions">No active sessions found. Start a presentation first.</div>';
+            return;
+          }
+
+          listEl.innerHTML = data.sessions
+            .map(
+              (s) => `
+                    <div class="session-item">
+                        <div class="session-info">
+                            <span class="session-id">${s.id}</span>
+                            <span class="session-filename">${s.filename || "Untitled"}</span>
+                        </div>
+                        <div class="action-buttons">
+                            <a href="/viewer.html?session=${s.id}" class="btn btn-sm" style="text-decoration:none; text-align:center; background: var(--bg-4); color: var(--text);">👁 View</a>
+                            <a href="/remote.html?session=${s.id}" class="btn btn-sm btn-primary" style="text-decoration:none; text-align:center;">📱 Control</a>
+                        </div>
+                    </div>
+                `,
+            )
+            .join("");
+        } catch (err) {
+          listEl.innerHTML =
+            '<div class="no-sessions">Error fetching sessions. Is the server running?</div>';
+        }
+      }
+
+      // Auto-refresh every 10 seconds
+      fetchSessions();
+      setInterval(fetchSessions, 10000);
+
+      // Theme sync
+      const savedTheme = localStorage.getItem("presenter-theme");
+      if (savedTheme) document.documentElement.dataset.theme = savedTheme;
+    </script>
+  </body>
+</html>

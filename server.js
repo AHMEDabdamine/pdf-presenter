@@ -169,6 +169,25 @@ app.get("/api/session/:sessionId", (req, res) => {
 });
 
 /**
+ * GET /api/sessions
+ * Returns a list of all active sessions for the access page.
+ */
+app.get("/api/sessions", (_req, res) => {
+  const activeSessions = [];
+  sessions.forEach((data, id) => {
+    // Only include sessions that have a PDF loaded or are active
+    activeSessions.push({
+      id,
+      filename: data.pdfFile
+        ? data.pdfFile.split("-").slice(1).join("-")
+        : null,
+      viewerCount: data.connectedViewers.size,
+    });
+  });
+  res.json({ sessions: activeSessions });
+});
+
+/**
  * GET /api/pdfs
  * Lists all uploaded PDFs available on the server.
  */
@@ -268,13 +287,13 @@ io.on("connection", (socket) => {
   socket.on("pdf-file-loaded", ({ sessionId, pdfUrl, filename }) => {
     const session = sessions.get(sessionId);
     if (!session) return;
-    
+
     // Extract filename from URL (e.g., "/uploads/12345-file.pdf" -> "12345-file.pdf")
     const pdfFile = pdfUrl.split("/").pop();
     session.pdfFile = pdfFile;
-    
+
     console.log(`[WS] PDF loaded in session ${sessionId}: ${filename}`);
-    
+
     // Notify all clients in the room about the new PDF
     io.to(sessionId).emit("pdf-loaded", {
       pdfUrl: `/uploads/${pdfFile}`,
@@ -289,7 +308,7 @@ io.on("connection", (socket) => {
   socket.on("request-session-state", ({ sessionId }) => {
     const session = sessions.get(sessionId);
     if (!session) return;
-    
+
     socket.emit("session-state", {
       currentSlide: session.currentSlide,
       totalSlides: session.totalSlides,
