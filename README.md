@@ -53,29 +53,41 @@ This video covers:
 
 #### Linux / macOS
 
+**Step 1: Install (run once)**
 ```bash
 git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 ./linux-install.sh
-./start-app.sh
+```
+
+**Step 2: Start the app (run every time)**
+```bash
+./start-app-lnx.sh
 ```
 
 #### Windows
 
+**Step 1: Install (run once)**
 ```batch
 git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
 windows-install.bat
-start-app.bat
 ```
 
-The install scripts will:
+**Step 2: Start the app (run every time)**
+```batch
+start-app-win.bat
+```
 
+**Install scripts** (`linux-install.sh` / `windows-install.bat`):
 - Check and install Node.js if needed
 - Install npm dependencies (skips if already installed)
 - Download offline vendor files
 - Create required directories
-- Launch the app automatically
+
+**Start scripts** (`start-app-lnx.sh` / `start-app-win.bat`):
+- Display all available network URLs
+- Launch the application on http://localhost:3000
 
 ### Manual Installation
 
@@ -143,8 +155,10 @@ npm run dev
 pdf-presenter/
 ├── server.js              # Express + Socket.io server
 ├── package.json           # Dependencies
-├── linux-install.sh       # Linux/macOS auto-installer
-├── windows-install.bat    # Windows auto-installer
+├── linux-install.sh       # Linux/macOS installer (one-time setup)
+├── windows-install.bat    # Windows installer (one-time setup)
+├── start-app-lnx.sh     # Linux/macOS app launcher
+├── start-app-win.bat    # Windows app launcher
 ├── .gitignore             # Git ignore rules (excludes uploads/)
 ├── uploads/               # Auto-created; stores uploaded PDFs
 └── public/
