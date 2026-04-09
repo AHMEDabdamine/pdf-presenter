@@ -66,6 +66,42 @@ const upload = multer({
  */
 const sessions = new Map();
 
+// ─── Authorization Helpers ───────────────────────────────────────────────────
+
+function requireRole(socket, allowedRoles) {
+  const role = socket.data.role;
+  if (!allowedRoles.includes(role)) {
+    console.log(`[WS] Rejected: role ${role} not in [${allowedRoles.join(", ")}]`);
+    socket.emit("error", { message: `Forbidden: requires one of [${allowedRoles.join(", ")}]` });
+    return false;
+  }
+  return true;
+}
+
+function requireSessionMatch(socket, sessionId) {
+  if (socket.data.sessionId !== sessionId) {
+    console.log(`[WS] Rejected: session mismatch (${socket.data.sessionId} vs ${sessionId})`);
+    socket.emit("error", { message: "Forbidden: not a member of this session" });
+    return false;
+  }
+  return true;
+}
+
+function sanitizeSlideCount(value) {
+  const parsed = parseInt(value, 10);
+  if (isNaN(parsed) || parsed < 1 || parsed > 10000) return null;
+  return parsed;
+}
+
+function sanitizePdfFilename(pdfUrl) {
+  // Extract basename and validate it's a PDF
+  const basename = path.basename(pdfUrl);
+  if (!basename.toLowerCase().endsWith(".pdf")) return null;
+  // Prevent path traversal - ensure no path separators remain
+  if (basename.includes("/") || basename.includes("\\")) return null;
+  return basename;
+}
+
 function getOrCreateSession(sessionId) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
@@ -273,8 +309,13 @@ io.on("connection", (socket) => {
   /**
    * slide-change: Sent by presenter or remote to move slides.
    * direction: "next" | "prev" | number (absolute)
+   * 🔒 SECURED: Requires "presenter" or "remote" role + session membership
    */
   socket.on("slide-change", ({ sessionId, direction, slide }) => {
+    // 🔒 AUTHORIZATION: Only presenter or remote can change slides
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter", "remote"])) return;
+
     const session = sessions.get(sessionId);
     if (!session) return;
 
@@ -300,24 +341,55 @@ io.on("connection", (socket) => {
 
   /**
    * set-total-slides: Presenter reports total page count after PDF loads.
+   * 🔒 SECURED: Requires "presenter" role + session membership + input validation
    */
   socket.on("set-total-slides", ({ sessionId, totalSlides }) => {
+    // 🔒 AUTHORIZATION: Only presenter can set total slides
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
     const session = sessions.get(sessionId);
     if (!session) return;
-    session.totalSlides = totalSlides;
-    io.to(sessionId).emit("total-slides-update", { totalSlides });
+
+    // 🔒 INPUT VALIDATION: Sanitize slide count
+    const sanitizedCount = sanitizeSlideCount(totalSlides);
+    if (sanitizedCount === null) {
+      socket.emit("error", { message: "Invalid slide count" });
+      return;
+    }
+
+    session.totalSlides = sanitizedCount;
+    io.to(sessionId).emit("total-slides-update", { totalSlides: sanitizedCount });
   });
 
   /**
    * pdf-file-loaded: Presenter notifies server when loading PDF from library
+   * 🔒 SECURED: Requires "presenter" role + session membership + file path validation
    */
   socket.on("pdf-file-loaded", ({ sessionId, pdfUrl, filename }) => {
+    // 🔒 AUTHORIZATION: Only presenter can change PDFs
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    // Extract filename from URL (e.g., "/uploads/12345-file.pdf" -> "12345-file.pdf")
-    const pdfFile = pdfUrl.split("/").pop();
+    // 🔒 INPUT VALIDATION: Sanitize PDF filename to prevent path traversal
+    const pdfFile = sanitizePdfFilename(pdfUrl);
+    if (!pdfFile) {
+      socket.emit("error", { message: "Invalid PDF filename" });
+      return;
+    }
+
+    // 🔒 FILE EXISTENCE: Verify the file actually exists
+    const filePath = path.join(UPLOAD_DIR, pdfFile);
+    if (!fs.existsSync(filePath)) {
+      socket.emit("error", { message: "PDF file not found" });
+      return;
+    }
+
     session.pdfFile = pdfFile;
+    session.currentSlide = 1; // Reset to first slide on PDF change
 
     console.log(`[WS] PDF loaded in session ${sessionId}: ${filename}`);
 
@@ -331,8 +403,12 @@ io.on("connection", (socket) => {
   });
   /**
    * request-session-state: Client requests current session state (for recovery)
+   * 🔒 SECURED: Requires session membership (prevents session enumeration)
    */
   socket.on("request-session-state", ({ sessionId }) => {
+    // 🔒 AUTHORIZATION: Only members of the session can query its state
+    if (!requireSessionMatch(socket, sessionId)) return;
+
     const session = sessions.get(sessionId);
     if (!session) return;
 
@@ -345,9 +421,18 @@ io.on("connection", (socket) => {
 
   /**
    * cursor-move: Remote broadcasts cursor position to presenter.
+   * 🔒 SECURED: Requires "remote" role + session membership + coordinate clamping
    */
   socket.on("cursor-move", ({ sessionId, x, y, active }) => {
-    socket.to(sessionId).emit("cursor-move", { x, y, active });
+    // 🔒 AUTHORIZATION: Only remote controllers should send cursor
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["remote"])) return;
+
+    // 🔒 INPUT VALIDATION: Clamp coordinates to valid 0-1 range
+    const clampedX = Math.max(0, Math.min(1, parseFloat(x) || 0));
+    const clampedY = Math.max(0, Math.min(1, parseFloat(y) || 0));
+
+    socket.to(sessionId).emit("cursor-move", { x: clampedX, y: clampedY, active: !!active });
   });
 
   socket.on("disconnect", () => {
