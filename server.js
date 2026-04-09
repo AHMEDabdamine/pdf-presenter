@@ -274,15 +274,32 @@ io.on("connection", (socket) => {
   /**
    * join-session: Called by presenter, remote, or viewer clients.
    * role: "presenter" | "remote" | "viewer"
+   * 🔒 SECURED: Role cannot be changed after initial join. Only one presenter allowed.
    */
   socket.on("join-session", ({ sessionId, role }) => {
     if (!sessionId) return;
+    if (!["presenter", "remote", "viewer"].includes(role)) return;
+
+    const session = getOrCreateSession(sessionId);
+
+    // 🔒 SECURITY: Prevent role changes after initial join
+    if (socket.data.sessionId) {
+      console.log(`[WS] Rejected: ${socket.data.role} tried to re-join as ${role}`);
+      socket.emit("error", { message: "Forbidden: role cannot be changed after joining" });
+      return;
+    }
+
+    // 🔒 SECURITY: Prevent multiple presenters (first-come-first-serve)
+    if (role === "presenter" && session.presenterSocket) {
+      console.log(`[WS] Rejected: presenter slot already taken in session ${sessionId}`);
+      socket.emit("error", { message: "Forbidden: session already has a presenter" });
+      return;
+    }
 
     socket.join(sessionId);
     socket.data.sessionId = sessionId;
     socket.data.role = role;
-
-    const session = getOrCreateSession(sessionId);
+    socket.data.joinedAt = Date.now();
 
     if (role === "presenter") {
       session.presenterSocket = socket.id;
