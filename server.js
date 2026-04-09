@@ -40,7 +40,11 @@ const storage = multer.diskStorage({
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
     // Sanitize filename and prefix with timestamp to avoid collisions
-    const safe = file.originalname.replace(/[^a-zA-Z0-9._-]/g, "_");
+    // Allow Unicode letters (including Arabic), numbers, spaces, and common safe chars
+    // Remove only path separators and control characters
+    const safe = file.originalname
+      .replace(/[\\/:*?"<>|]/g, "_")  // Windows/Unix reserved chars
+      .replace(/[\x00-\x1f\x7f]/g, ""); // Control characters
     cb(null, `${Date.now()}-${safe}`);
   },
 });
@@ -200,6 +204,29 @@ app.get("/api/pdfs", (_req, res) => {
     res.json(files);
   } catch {
     res.json([]);
+  }
+});
+
+/**
+ * DELETE /api/pdfs/:filename
+ * Deletes a PDF file from the server.
+ */
+app.delete("/api/pdfs/:filename", (req, res) => {
+  try {
+    const { filename } = req.params;
+    // Prevent directory traversal
+    if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+      return res.status(400).json({ error: "Invalid filename" });
+    }
+    const filePath = path.join(UPLOAD_DIR, filename);
+    if (!fs.existsSync(filePath)) {
+      return res.status(404).json({ error: "File not found" });
+    }
+    fs.unlinkSync(filePath);
+    res.json({ success: true });
+  } catch (err) {
+    console.error("Delete error:", err);
+    res.status(500).json({ error: "Failed to delete file" });
   }
 });
 

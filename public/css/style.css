@@ -166,6 +166,73 @@ button {
   color: var(--text);
 }
 
+/* ── Change PDF Button ──────────────────────────────────── */
+.btn-change-pdf {
+  background: var(--bg-3);
+  border: 1px solid var(--border-2);
+  color: var(--text-2);
+  font-size: 0.8rem;
+  padding: 6px 14px;
+}
+.btn-change-pdf:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: var(--accent-glow);
+}
+
+/* ── Swap Cancel Button ─────────────────────────────────── */
+.swap-cancel-btn {
+  margin-top: 20px;
+  width: 100%;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid var(--border-2);
+  color: var(--text-3);
+  font-size: 0.875rem;
+}
+.swap-cancel-btn:hover {
+  background: var(--bg-3);
+  color: var(--text);
+  border-color: var(--border-2);
+}
+
+/* ── PDF Swap Banner (Viewer & Remote) ──────────────────── */
+.pdf-swap-banner,
+.rc-pdf-swap-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, var(--bg-3), var(--bg-2));
+  border-left: 3px solid var(--accent);
+  color: var(--text);
+  font-size: 0.875rem;
+  opacity: 0;
+  transform: translateY(-8px);
+  transition: opacity 0.35s ease, transform 0.35s ease;
+  z-index: 60;
+}
+.pdf-swap-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+}
+.rc-pdf-swap-banner {
+  position: relative;
+  border-radius: 0;
+}
+.pdf-swap-banner.show,
+.rc-pdf-swap-banner.show {
+  opacity: 1;
+  transform: translateY(0);
+}
+.pdf-swap-banner strong,
+.rc-pdf-swap-banner strong {
+  color: var(--accent);
+}
+
 /* ══════════════════════════════════════════════════════════
    PRESENTER PAGE
    ══════════════════════════════════════════════════════════ */
@@ -383,6 +450,36 @@ button {
   font-size: 0.75rem;
   color: var(--accent);
 }
+.library-item .library-name {
+  color: var(--text);
+  font-size: 0.85rem;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-item .library-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.library-item .library-load {
+  color: var(--accent);
+}
+.library-item .library-delete {
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  padding: 4px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  opacity: 0.6;
+  transition: var(--transition);
+}
+.library-item .library-delete:hover {
+  opacity: 1;
+  background: var(--danger);
+}
 
 /* ── Slide Area ─────────────────────────────────────────── */
 .slide-area {
@@ -556,12 +653,10 @@ button {
   opacity: 1;
 }
 
-/* Hide strip completely in fullscreen */
 .slide-strip.fs-hidden {
   display: none !important;
 }
 
-/* Wrapper: no border/shadow in fullscreen for true edge-to-edge */
 .slide-wrapper.fs-mode {
   border-radius: 0;
   box-shadow: none;
@@ -801,7 +896,6 @@ button {
   align-items: stretch;
 }
 
-/* Make remote pad grow to fill available space */
 .remote-pad {
   display: flex;
   flex-direction: column;
@@ -809,14 +903,12 @@ button {
   flex: 1;
 }
 
-/* Make the unified control panel grow */
 .remote-pad .rc-tab-panel {
   display: flex;
   flex-direction: column;
   flex: 1;
 }
 
-/* Make notes section take all remaining space */
 .rc-notes-section {
   margin-top: 20px;
   border-top: 1px solid var(--border);
@@ -875,7 +967,6 @@ button {
   border-radius: var(--radius-sm) !important;
 }
 
-/* Cursor Toggle Button */
 .rc-cursor-btn {
   width: 40px !important;
   height: 40px !important;
@@ -895,7 +986,6 @@ button {
   color: var(--accent) !important;
 }
 
-/* Mobile adjustments */
 @media (max-width: 600px) {
   .rc-fullscreen-btn {
     width: 44px !important;
@@ -1297,7 +1387,6 @@ button {
   overflow-y: auto;
   overflow-x: hidden;
   padding: 40px 32px 120px;
-  /* Custom scrollbar */
   scrollbar-width: none;
 }
 .tp-text-wrap::-webkit-scrollbar {
@@ -1317,7 +1406,6 @@ button {
   margin-bottom: 2em;
 }
 
-/* Gradient fade at top and bottom to hint at scroll */
 .tp-text-wrap::before,
 .tp-text-wrap::after {
   content: "";
@@ -1463,6 +1551,10 @@ button {
   .btn-icon:not(#themeToggle):not(#fullscreenBtn) {
     display: none;
   }
+  .btn-change-pdf {
+    font-size: 0.75rem;
+    padding: 5px 10px;
+  }
 }
 
 /* ══════════════════════════════════════════════════════════
@@ -1511,8 +1603,6 @@ button {
   background: var(--bg);
   min-height: 100vh;
 }
-
-/* ── Viewer Connect Screen ─────────────────────────────────────────── */
 
 .viewer-connect {
   display: flex;
@@ -1570,8 +1660,6 @@ button {
   font-size: 0.875rem;
   min-height: 1.2em;
 }
-
-/* ── Viewer Slide View ────────────────────────────────────────────── */
 
 .viewer-slide {
   display: flex;
@@ -1770,7 +1858,6 @@ button {
   color: var(--accent);
 }
 
-/* Fullscreen mode styles */
 .viewer-slide.fs-mode {
   position: fixed;
   top: 0;
@@ -1801,7 +1888,6 @@ button {
   background: black;
 }
 
-/* Orientation-based sizing */
 .orient-portrait .vs-canvas-wrap {
   max-width: 100%;
 }
@@ -1810,7 +1896,6 @@ button {
   max-height: 100%;
 }
 
-/* Fullscreen with portrait orientation - maximize width */
 .viewer-slide.fs-mode.orient-portrait #viewerCanvas {
   max-width: 100%;
   max-height: none;
@@ -1818,7 +1903,6 @@ button {
   height: auto;
 }
 
-/* Fullscreen with landscape orientation - maximize height */
 .viewer-slide.fs-mode.orient-landscape #viewerCanvas {
   max-width: none;
   max-height: 100%;

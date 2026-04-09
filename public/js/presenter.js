@@ -10,10 +10,12 @@
  *  - QR code modal
  *  - Theme toggle & fullscreen
  *  - Thumbnail strip generation
+ *  - Mid-session PDF swap (without closing session)
  */
 
-// ─── PDF.js Worker ────────────────────────────────────────────────────────────
+// ─── PDF.js Configuration ─────────────────────────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.standardFontDataUrl = "/vendor/standard_fonts/";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const state = {
@@ -132,7 +134,6 @@ function connectSocket() {
       const cursorX = x * rect.width;
       const cursorY = y * rect.height;
 
-      // Use requestAnimationFrame for smoother updates
       requestAnimationFrame(() => {
         artificialCursor.style.left = cursorX + "px";
         artificialCursor.style.top = cursorY + "px";
@@ -143,16 +144,13 @@ function connectSocket() {
     }
   });
 
-  // Track connected remote count
   socket.on("connect_error", () => showToast("⚠ WebSocket connection lost"));
 
-  // Count remotes via our own tracking
   socket.on("remote-count", ({ count }) => {
     state.connectedRemotes = count;
     connCount.textContent = `${count} remote(s) connected · ${state.connectedViewers} viewer(s)`;
   });
 
-  // Track viewer count
   socket.on("viewer-count", ({ count }) => {
     state.connectedViewers = count;
     connCount.textContent = `${state.connectedRemotes} remote(s) connected · ${count} viewer(s)`;
@@ -197,6 +195,9 @@ async function uploadFile(file) {
   progressFill.style.width = "0%";
   progressLabel.textContent = "Uploading…";
 
+  // Show the setup overlay in swap mode (keeps session alive)
+  showSwapOverlay();
+
   const formData = new FormData();
   formData.append("pdf", file);
 
@@ -223,16 +224,56 @@ async function uploadFile(file) {
             (JSON.parse(xhr.responseText)?.error || "Unknown error"),
         );
         progressDiv.style.display = "none";
+        hideSwapOverlay();
         reject();
       }
     };
 
     xhr.onerror = () => {
       showToast("⚠ Network error during upload");
+      hideSwapOverlay();
       reject();
     };
     xhr.send(formData);
   });
+}
+
+// ─── Swap Overlay Helpers ─────────────────────────────────────────────────────
+
+/**
+ * Show the setup overlay in "swap" mode — the session stays alive,
+ * we just let the presenter pick a new PDF.
+ */
+function showSwapOverlay() {
+  setupOverlay.classList.remove("hide");
+  setupOverlay.dataset.swapMode = "true";
+
+  // Show a cancel button when swapping (not on first load)
+  if (state.pdfDoc) {
+    let cancelBtn = $("swapCancelBtn");
+    if (!cancelBtn) {
+      cancelBtn = document.createElement("button");
+      cancelBtn.id = "swapCancelBtn";
+      cancelBtn.className = "btn swap-cancel-btn";
+      cancelBtn.textContent = "✕ Cancel";
+      cancelBtn.addEventListener("click", hideSwapOverlay);
+      setupOverlay.querySelector(".setup-card").appendChild(cancelBtn);
+    }
+    cancelBtn.style.display = "inline-flex";
+  }
+}
+
+function hideSwapOverlay() {
+  // Only hide if a PDF is already loaded
+  if (state.pdfDoc) {
+    setupOverlay.classList.add("hide");
+    delete setupOverlay.dataset.swapMode;
+    progressDiv.style.display = "none";
+    const cancelBtn = $("swapCancelBtn");
+    if (cancelBtn) cancelBtn.style.display = "none";
+    // Reset file input so same file can be re-selected
+    fileInput.value = "";
+  }
 }
 
 // ─── PDF Rendering ────────────────────────────────────────────────────────────
@@ -246,14 +287,11 @@ async function loadPdfFromUrl(url, filename = "", { skipNotify = false } = {}) {
     state.totalSlides = pdfDoc.numPages;
     state.currentSlide = 1;
 
-    // Tell the server about total slides and PDF file for this session
-    // Skip notification when loading from server broadcast (prevents loop)
     if (socket?.connected && !skipNotify) {
       socket.emit("set-total-slides", {
         sessionId: state.sessionId,
         totalSlides: pdfDoc.numPages,
       });
-      // Also notify about the PDF file so viewers can access it
       socket.emit("pdf-file-loaded", {
         sessionId: state.sessionId,
         pdfUrl: url,
@@ -261,9 +299,13 @@ async function loadPdfFromUrl(url, filename = "", { skipNotify = false } = {}) {
       });
     }
 
-    // Hide setup overlay
+    // Hide setup overlay and swap overlay
     setupOverlay.classList.add("hide");
+    delete setupOverlay.dataset.swapMode;
     progressDiv.style.display = "none";
+    const cancelBtn = $("swapCancelBtn");
+    if (cancelBtn) cancelBtn.style.display = "none";
+    fileInput.value = "";
 
     // Render first slide
     await renderSlide(1);
@@ -276,6 +318,7 @@ async function loadPdfFromUrl(url, filename = "", { skipNotify = false } = {}) {
     console.error("PDF load error:", err);
     showToast("⚠ Failed to load PDF: " + err.message);
     progressDiv.style.display = "none";
+    hideSwapOverlay();
   }
 }
 
@@ -289,8 +332,6 @@ async function renderSlide(pageNum) {
     const page = await state.pdfDoc.getPage(pageNum);
     const inFS = !!document.fullscreenElement;
 
-    // In fullscreen: fill the entire viewport edge-to-edge
-    // Normal mode: leave minimal room for nav arrows and thumbnail strip
     const maxW = inFS ? slideArea.clientWidth : slideArea.clientWidth - 60;
     const maxH = inFS ? slideArea.clientHeight : slideArea.clientHeight - 40;
 
@@ -301,14 +342,12 @@ async function renderSlide(pageNum) {
     canvas.width = vp.width;
     canvas.height = vp.height;
 
-    // Abort any ongoing render task
     if (state.renderTask) state.renderTask.cancel();
     state.renderTask = page.render({ canvasContext: ctx, viewport: vp });
 
     await state.renderTask.promise;
     state.renderTask = null;
 
-    // Handle link annotations
     await setupLinkHandlers(page, vp);
 
     state.currentSlide = pageNum;
@@ -329,7 +368,6 @@ let currentLinks = [];
 let linkHighlightCanvas = null;
 let linkHighlightCtx = null;
 
-// Create link highlight canvas
 function createLinkHighlightCanvas() {
   if (!linkHighlightCanvas) {
     linkHighlightCanvas = document.createElement("canvas");
@@ -345,13 +383,11 @@ function createLinkHighlightCanvas() {
 
 async function setupLinkHandlers(page, viewport) {
   try {
-    // Get link annotations from the page
     const annotations = await page.getAnnotations();
     currentLinks = [];
 
     for (const annotation of annotations) {
       if (annotation.subtype === "Link") {
-        // Convert PDF coordinates to canvas coordinates
         const rect = viewport.convertToViewportRectangle(annotation.rect);
         const [x1, y1, x2, y2] = rect;
 
@@ -365,7 +401,6 @@ async function setupLinkHandlers(page, viewport) {
       }
     }
 
-    // Create and setup highlight canvas
     createLinkHighlightCanvas();
     updateLinkHighlight();
   } catch (err) {
@@ -377,7 +412,6 @@ async function setupLinkHandlers(page, viewport) {
 function updateLinkHighlight(hoveredLink = null) {
   if (!linkHighlightCtx) return;
 
-  // Clear canvas
   linkHighlightCtx.clearRect(
     0,
     0,
@@ -385,27 +419,21 @@ function updateLinkHighlight(hoveredLink = null) {
     linkHighlightCanvas.height,
   );
 
-  // Only show highlights if there's a hovered link
   if (hoveredLink === null || !currentLinks.length) return;
 
-  // Set canvas size to match main canvas
   linkHighlightCanvas.width = canvas.width;
   linkHighlightCanvas.height = canvas.height;
 
-  // Draw highlight only for the hovered link
   const link = currentLinks[hoveredLink];
 
-  // Draw semi-transparent rectangle for hovered link
   linkHighlightCtx.fillStyle = "rgba(59, 130, 246, 0.3)";
   linkHighlightCtx.fillRect(link.x, link.y, link.width, link.height);
 
-  // Draw border for better visibility
   linkHighlightCtx.strokeStyle = "rgba(59, 130, 246, 0.8)";
   linkHighlightCtx.lineWidth = 2;
   linkHighlightCtx.strokeRect(link.x, link.y, link.width, link.height);
 }
 
-// Canvas click handler for links
 canvas.addEventListener("click", (e) => {
   if (!currentLinks.length) return;
 
@@ -428,7 +456,6 @@ canvas.addEventListener("click", (e) => {
   }
 });
 
-// Change cursor to pointer when hovering over links
 canvas.addEventListener("mousemove", (e) => {
   if (!currentLinks.length) {
     canvas.style.cursor = "default";
@@ -458,7 +485,6 @@ canvas.addEventListener("mousemove", (e) => {
   updateLinkHighlight(hoveredLinkIndex >= 0 ? hoveredLinkIndex : null);
 });
 
-// Hide highlight when mouse leaves canvas
 canvas.addEventListener("mouseleave", () => {
   updateLinkHighlight();
 });
@@ -470,13 +496,11 @@ async function goToSlide(num, source = "local") {
   num = Math.max(1, Math.min(num, state.totalSlides));
   if (num === state.currentSlide) return;
 
-  // Trigger transition flash
   transOverlay.classList.add("flash");
   setTimeout(() => transOverlay.classList.remove("flash"), 180);
 
   await renderSlide(num);
 
-  // Emit to server (only if change came from local input)
   if (source === "local" && socket?.connected) {
     socket.emit("slide-change", {
       sessionId: state.sessionId,
@@ -492,13 +516,13 @@ function prevSlide() {
   goToSlide(state.currentSlide - 1);
 }
 
-// UI Buttons
 nextBtn.addEventListener("click", nextSlide);
 prevBtn.addEventListener("click", prevSlide);
 
-// Keyboard navigation
 document.addEventListener("keydown", (e) => {
-  if (remoteModal.style.display !== "none") return; // modal open
+  if (remoteModal.style.display !== "none") return;
+  // Don't intercept keys when swap overlay is open
+  if (!setupOverlay.classList.contains("hide")) return;
   switch (e.key) {
     case "ArrowRight":
     case "ArrowDown":
@@ -519,11 +543,11 @@ document.addEventListener("keydown", (e) => {
       break;
     case "Escape":
       if (remoteModal.style.display !== "none") closeRemoteModal();
+      else hideSwapOverlay();
       break;
   }
 });
 
-// Touch / Swipe support
 let touchStartX = 0;
 slideArea.addEventListener(
   "touchstart",
@@ -568,7 +592,6 @@ async function buildThumbnailStrip() {
       goToSlide(parseInt(wrapper.dataset.page)),
     );
 
-    // Render thumbnail async
     (async (pageNum, tc) => {
       try {
         const page = await doc.getPage(pageNum);
@@ -591,7 +614,6 @@ function updateStripHighlight() {
       parseInt(el.dataset.page) === state.currentSlide,
     );
   });
-  // Scroll active thumb into view
   const active = slideStrip.querySelector(".strip-thumb.active");
   if (active)
     active.scrollIntoView({
@@ -607,28 +629,73 @@ async function loadPdfLibrary() {
   try {
     const res = await fetch("/api/pdfs");
     const pdfs = await res.json();
-    if (!pdfs.length) return;
-
-    // Show quick list in setup card
     const libList = $("libraryList");
+    
+    if (!pdfs.length) {
+      $("pdfLibrary").style.display = "none";
+      return;
+    }
+
     $("pdfLibrary").style.display = "block";
     libList.innerHTML = pdfs
       .slice(0, 5)
       .map(
         (p) =>
-          `<div class="library-item" data-url="${p.url}">
-        <span>${decodeURIComponent(p.name.replace(/^\d+-/, ""))}</span>
-        <span>Load →</span>
+          `<div class="library-item" data-url="${p.url}" data-filename="${p.name}">
+        <span class="library-name">${decodeURIComponent(p.name.replace(/^\d+-/, ""))}</span>
+        <div class="library-actions">
+          <span class="library-load">Load →</span>
+          <button class="library-delete" title="Delete file">🗑️</button>
+        </div>
       </div>`,
       )
       .join("");
 
     libList.querySelectorAll(".library-item").forEach((el) => {
-      el.addEventListener("click", () => loadPdfFromUrl(el.dataset.url));
+      el.addEventListener("click", (e) => {
+        if (e.target.closest(".library-delete")) return;
+        loadPdfFromUrl(el.dataset.url);
+      });
+    });
+
+    libList.querySelectorAll(".library-delete").forEach((btn) => {
+      btn.addEventListener("click", async (e) => {
+        e.stopPropagation();
+        const item = btn.closest(".library-item");
+        const filename = item.dataset.filename;
+        if (!confirm(`Delete "${decodeURIComponent(filename.replace(/^\d+-/, ""))}"?`)) return;
+        
+        try {
+          const res = await fetch(`/api/pdfs/${encodeURIComponent(filename)}`, { method: "DELETE" });
+          if (res.ok) {
+            item.remove();
+            showToast("✓ File deleted");
+            // Hide library if empty
+            if (!libList.querySelectorAll(".library-item").length) {
+              $("pdfLibrary").style.display = "none";
+            }
+          } else {
+            showToast("⚠ Failed to delete file");
+          }
+        } catch {
+          showToast("⚠ Failed to delete file");
+        }
+      });
     });
   } catch {
     /* ignore */
   }
+}
+
+// ─── Change PDF Button ────────────────────────────────────────────────────────
+
+const changePdfBtn = $("changePdfBtn");
+if (changePdfBtn) {
+  changePdfBtn.addEventListener("click", () => {
+    // Reload library list so newly uploaded PDFs appear
+    loadPdfLibrary();
+    showSwapOverlay();
+  });
 }
 
 // ─── Remote Modal & QR ───────────────────────────────────────────────────────
@@ -636,7 +703,6 @@ async function loadPdfLibrary() {
 $("showRemoteBtn").addEventListener("click", () => {
   remoteModal.style.display = "flex";
 
-  // Restore saved IP address
   const savedIp = localStorage.getItem("presenter-ip");
   if (savedIp) {
     $("ipInput").value = savedIp;
@@ -651,16 +717,11 @@ function closeRemoteModal() {
   remoteModal.style.display = "none";
 }
 
-/**
- * Build the remote URL, optionally swapping the host with a user-supplied IP.
- * This lets the QR code point to the machine's LAN IP instead of localhost.
- */
 function buildRemoteUrl(ipOverride, urlType = "remote") {
   const base = urlType === "viewer" ? state.viewerUrl : state.remoteUrl;
   if (!ipOverride) return base;
   try {
     const u = new URL(base);
-    // Keep the port, replace only the hostname
     u.hostname = ipOverride.trim();
     return u.toString();
   } catch {
@@ -669,17 +730,14 @@ function buildRemoteUrl(ipOverride, urlType = "remote") {
 }
 
 function refreshQR(ipOverride) {
-  // Update remote QR
   const remoteUrl = buildRemoteUrl(ipOverride, "remote");
   state.remoteUrl = remoteUrl;
 
-  // Update viewer QR
   const viewerUrl = buildRemoteUrl(ipOverride, "viewer");
   state.viewerUrl = viewerUrl;
 
   remoteUrlEl.textContent = remoteUrl;
 
-  // Regenerate QR via QRious (client-side, always available)
   try {
     new QRious({
       element: qrCanvas,
@@ -689,7 +747,6 @@ function refreshQR(ipOverride) {
       foreground: "#1a1a2e",
     });
 
-    // Update viewer QR if canvas exists
     const viewerQrCanvas = $("viewerQrCanvas");
     if (viewerQrCanvas && state.viewerUrl) {
       new QRious({
@@ -705,7 +762,6 @@ function refreshQR(ipOverride) {
   }
 }
 
-// Apply IP button
 $("applyIpBtn").addEventListener("click", () => {
   const ip = $("ipInput").value.trim();
   const ipNote = $("ipNote");
@@ -716,7 +772,6 @@ $("applyIpBtn").addEventListener("click", () => {
     return;
   }
 
-  // Save IP to localStorage
   if (ip) {
     localStorage.setItem("presenter-ip", ip);
   } else {
@@ -731,7 +786,6 @@ $("applyIpBtn").addEventListener("click", () => {
   showToast(ip ? `✓ QR updated to ${ip}` : "✓ Reset to localhost");
 });
 
-// Allow pressing Enter in IP field
 $("ipInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("applyIpBtn").click();
 });
@@ -749,7 +803,6 @@ $("copyUrlBtn").addEventListener("click", () => {
 const viewerModal = $("viewerModal");
 let currentOrientation = localStorage.getItem("presenter-orientation") || "landscape";
 
-// Initialize orientation buttons
 function updateOrientationButtons() {
   const landscapeBtn = $("orientLandscape");
   const portraitBtn = $("orientPortrait");
@@ -762,7 +815,6 @@ function updateOrientationButtons() {
 $("showViewerBtn").addEventListener("click", () => {
   viewerModal.style.display = "flex";
   updateOrientationButtons();
-  // Refresh viewer QR with current orientation
   const savedIp = localStorage.getItem("presenter-ip");
   refreshViewerQR(savedIp || null);
 });
@@ -776,13 +828,11 @@ function closeViewerModal() {
   viewerModal.style.display = "none";
 }
 
-// Orientation toggle buttons
 $("orientLandscape").addEventListener("click", () => {
   currentOrientation = "landscape";
   localStorage.setItem("presenter-orientation", currentOrientation);
   updateOrientationButtons();
   showToast("✓ Orientation set to Landscape");
-  // Update URL with orientation parameter
   const savedIp = localStorage.getItem("presenter-ip");
   refreshViewerQR(savedIp || null);
 });
@@ -792,35 +842,29 @@ $("orientPortrait").addEventListener("click", () => {
   localStorage.setItem("presenter-orientation", currentOrientation);
   updateOrientationButtons();
   showToast("✓ Orientation set to Portrait");
-  // Update URL with orientation parameter
   const savedIp = localStorage.getItem("presenter-ip");
   refreshViewerQR(savedIp || null);
 });
 
 function refreshViewerQR(ipOverride) {
   if (!state.viewerUrl) return;
-  
-  // Build URL with orientation parameter
+
   let viewerUrl = buildRemoteUrl(ipOverride, "viewer");
   const url = new URL(viewerUrl);
   url.searchParams.set("orient", currentOrientation);
   viewerUrl = url.toString();
-  
-  // Update display
+
   const viewerUrlDisplay = $("viewerUrlDisplay");
   if (viewerUrlDisplay) viewerUrlDisplay.textContent = viewerUrl;
-  
-  // Update viewer count display
+
   const viewerCountEl = $("viewerCount");
   if (viewerCountEl) {
     viewerCountEl.textContent = `${state.connectedViewers} viewer(s) connected`;
   }
-  
-  // Update session ID
+
   const viewerModalSessionId = $("viewerModalSessionId");
   if (viewerModalSessionId) viewerModalSessionId.textContent = state.sessionId || "—";
-  
-  // Generate QR
+
   const viewerQrCanvas = $("viewerQrCanvas");
   if (viewerQrCanvas) {
     try {
@@ -839,13 +883,33 @@ function refreshViewerQR(ipOverride) {
 
 $("copyViewerUrlBtn").addEventListener("click", () => {
   if (!state.viewerUrl) return;
-  // Build URL with orientation
   const url = new URL(buildRemoteUrl(null, "viewer"));
   url.searchParams.set("orient", currentOrientation);
-  navigator.clipboard
-    .writeText(url.toString())
-    .then(() => showToast("✓ Viewer link copied"))
-    .catch(() => showToast("⚠ Copy failed"));
+  const urlString = url.toString();
+  
+  if (navigator.clipboard && window.isSecureContext) {
+    navigator.clipboard
+      .writeText(urlString)
+      .then(() => showToast("✓ Viewer link copied"))
+      .catch(() => showToast("⚠ Copy failed"));
+  } else {
+    // Fallback for non-secure contexts (HTTP)
+    const textArea = document.createElement("textarea");
+    textArea.value = urlString;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.focus();
+    textArea.select();
+    try {
+      document.execCommand("copy");
+      showToast("✓ Viewer link copied");
+    } catch (err) {
+      showToast("⚠ Copy failed - please copy manually");
+      console.error("Copy failed:", err);
+    }
+    document.body.removeChild(textArea);
+  }
 });
 
 // ─── Theme Toggle ─────────────────────────────────────────────────────────────
@@ -860,7 +924,6 @@ themeToggle.addEventListener("click", () => {
   localStorage.setItem("presenter-theme", isDark ? "dark" : "light");
 });
 
-// Restore saved theme
 const savedTheme = localStorage.getItem("presenter-theme");
 if (savedTheme === "light") {
   isDark = false;
@@ -886,17 +949,12 @@ fullscreenBtn.addEventListener("click", toggleFullscreen);
 document.addEventListener("fullscreenchange", () => {
   const inFS = !!document.fullscreenElement;
   fullscreenBtn.textContent = inFS ? "⊠" : "⛶";
-  // Hide topbar in fullscreen
   topbar.classList.toggle("hidden", inFS);
-  // Hide thumbnail strip in fullscreen (auto-hide via class)
   slideStrip.classList.toggle("fs-hidden", inFS);
-  // Remove wrapper border/shadow in fullscreen for edge-to-edge look
   slideWrapper.classList.toggle("fs-mode", inFS);
-  // Re-render at new dimensions
   if (state.pdfDoc) renderSlide(state.currentSlide);
 });
 
-// Re-render on window resize
 let resizeTimer;
 window.addEventListener("resize", () => {
   clearTimeout(resizeTimer);

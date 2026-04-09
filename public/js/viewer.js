@@ -7,10 +7,12 @@
  *  - PDF rendering via PDF.js
  *  - Real-time slide sync via WebSocket
  *  - Auto-reconnection handling
+ *  - Mid-session PDF swap (presenter changes PDF without closing session)
  */
 
-// ─── PDF.js Worker ────────────────────────────────────────────────────────────
+// ─── PDF.js Configuration ───────────────────────────────────────────────────
 pdfjsLib.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.standardFontDataUrl = "/vendor/standard_fonts/";
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const state = {
@@ -23,8 +25,14 @@ const state = {
   isConnected: false,
   reconnectAttempts: 0,
   maxReconnectAttempts: 10,
-  orientation: "landscape", // 'landscape' or 'portrait'
+  orientation: "landscape",
   isFullscreen: false,
+  rendering: false,
+  // Cache for rendered slides: Map<pageNum, ImageBitmap>
+  slideCache: new Map(),
+  maxCacheSize: 5, // Keep last 5 slides in memory
+  // Preload state
+  preloadTask: null,
 };
 
 // ─── DOM References ───────────────────────────────────────────────────────────
@@ -52,7 +60,6 @@ const params = new URLSearchParams(window.location.search);
 const urlSession = params.get("session");
 const urlOrientation = params.get("orient");
 
-// Set orientation from URL param if provided
 if (urlOrientation === "portrait" || urlOrientation === "landscape") {
   state.orientation = urlOrientation;
   document.body.classList.add(`orient-${urlOrientation}`);
@@ -89,7 +96,6 @@ function connectToSession() {
 }
 
 function initSocket() {
-  // Clear any existing reconnect interval
   if (reconnectInterval) {
     clearInterval(reconnectInterval);
     reconnectInterval = null;
@@ -114,7 +120,6 @@ function initSocket() {
       role: "viewer",
     });
 
-    // Update status indicator
     vsStatusDot.textContent = "● Live";
     vsStatusDot.classList.remove("disconnected");
     vsStatusDot.classList.add("connected");
@@ -136,9 +141,6 @@ function initSocket() {
     vsStatusDot.classList.remove("connected");
     vsStatusDot.classList.add("disconnected");
     showReconnecting();
-
-    // Socket.io handles reconnection automatically
-    // We just show the UI feedback
   });
 
   socket.on("reconnect", (attemptNumber) => {
@@ -148,7 +150,6 @@ function initSocket() {
     hideReconnecting();
     showToast("✓ Reconnected!");
 
-    // Re-join the session after reconnect
     socket.emit("join-session", {
       sessionId: state.sessionId,
       role: "viewer",
@@ -173,7 +174,6 @@ function initSocket() {
     showViewer();
     updateCounter();
 
-    // Load PDF if provided
     if (pdfFile) {
       console.log("[Viewer] Loading PDF from session state:", pdfFile);
       vsWaiting.style.display = "none";
@@ -182,11 +182,6 @@ function initSocket() {
       console.log("[Viewer] No PDF in session state yet");
       vsWaiting.style.display = "flex";
       vsLoading.style.display = "none";
-      // Check if we're getting slide updates but no PDF - likely wrong session
-      if (currentSlide > 1) {
-        vsError.style.display = "flex";
-        vsErrorText.textContent = "Session mismatch: Presenter has slides but no PDF. Scan the current QR code from the presenter.";
-      }
     }
   });
 
@@ -194,9 +189,7 @@ function initSocket() {
     console.log("[Viewer] Slide update:", currentSlide);
     state.currentSlide = currentSlide;
     updateCounter();
-    
-    // If we don't have PDF loaded but are getting slide updates,
-    // try to re-fetch session state to get the PDF URL
+
     if (!state.pdfDoc && state.pdfUrl) {
       console.log("[Viewer] Have PDF URL but doc not loaded, reloading...");
       loadPdf(state.pdfUrl);
@@ -204,10 +197,10 @@ function initSocket() {
       console.log("[Viewer] No PDF at all, requesting session state refresh");
       socket.emit("request-session-state", { sessionId: state.sessionId });
     } else {
-      renderCurrentSlide();
+      // Quick render from cache if available, then trigger proper render
+      renderCurrentSlideFast();
     }
 
-    // Visual feedback for slide change
     flashSlideChange();
   });
 
@@ -216,13 +209,58 @@ function initSocket() {
     updateCounter();
   });
 
+  // ─── Mid-session PDF swap ─────────────────────────────────────────────────
   socket.on("pdf-loaded", ({ pdfUrl, filename }) => {
-    console.log("[Viewer] PDF loaded:", filename);
-    state.pdfUrl = pdfUrl;
+    console.log("[Viewer] New PDF loaded mid-session:", filename);
+
+    // Clear previous PDF state
+    state.pdfDoc = null;
+    state.renderTask = null;
     state.currentSlide = 1;
+    state.pdfUrl = pdfUrl;
+
+    // Clear slide cache - old slides belong to previous PDF
+    clearSlideCache();
+
+    // Clear the canvas visually
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+    // Show a brief swap notification
+    showToast(`📄 New PDF: ${filename}`);
+    showPdfSwapBanner(filename);
+
+    // Hide waiting/error, show loading
+    vsWaiting.style.display = "none";
+    vsError.style.display = "none";
+
+    updateCounter();
     loadPdf(pdfUrl);
-    showToast(`📄 ${filename} loaded`);
   });
+}
+
+// ─── PDF Swap Banner ──────────────────────────────────────────────────────────
+
+function showPdfSwapBanner(filename) {
+  // Remove any existing banner
+  const existing = document.getElementById("pdfSwapBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "pdfSwapBanner";
+  banner.className = "pdf-swap-banner";
+  banner.innerHTML = `<span>🔄</span> <span>Presenter switched to: <strong>${filename}</strong></span>`;
+  document.body.appendChild(banner);
+
+  // Animate in
+  requestAnimationFrame(() => {
+    banner.classList.add("show");
+  });
+
+  // Auto-remove after 4s
+  setTimeout(() => {
+    banner.classList.remove("show");
+    setTimeout(() => banner.remove(), 400);
+  }, 4000);
 }
 
 // ─── PDF Loading & Rendering ──────────────────────────────────────────────────
@@ -234,7 +272,6 @@ async function loadPdf(url) {
   vsError.style.display = "none";
 
   try {
-    // Cancel any previous render
     if (state.renderTask) {
       await state.renderTask.cancel();
       state.renderTask = null;
@@ -245,7 +282,6 @@ async function loadPdf(url) {
     console.log("[Viewer] PDF loaded, pages:", pdf.numPages);
     state.pdfDoc = pdf;
 
-    // If totalSlides wasn't set yet, update it
     if (state.totalSlides !== pdf.numPages) {
       state.totalSlides = pdf.numPages;
       updateCounter();
@@ -262,11 +298,47 @@ async function loadPdf(url) {
   }
 }
 
-async function renderCurrentSlide() {
+function clearSlideCache() {
+  // Close all ImageBitmaps to free GPU memory
+  for (const [pageNum, cached] of state.slideCache) {
+    if (cached.bitmap) cached.bitmap.close();
+  }
+  state.slideCache.clear();
+  console.log("[Viewer] Slide cache cleared");
+}
+
+async function renderCurrentSlideFast() {
+  const pageNum = Math.max(1, Math.min(state.currentSlide, state.totalSlides));
+  
+  // Check cache first - but skip preview-quality cached slides
+  if (state.slideCache.has(pageNum)) {
+    const cached = state.slideCache.get(pageNum);
+    // Don't use preview-quality cached slides for display
+    if (cached.isPreview) {
+      console.log("[Viewer] Cache hit for page:", pageNum, "(preview only, doing full render)");
+      renderCurrentSlide(false);
+      return;
+    }
+    console.log("[Viewer] Cache hit for page:", pageNum, "(full quality)");
+    ctx.drawImage(cached.bitmap, 0, 0, canvas.width, canvas.height);
+    vsLoading.style.display = "none";
+    // Already full quality, no need to re-render
+    return;
+  }
+  
+  // No cache - do full render
+  renderCurrentSlide(false);
+}
+
+async function renderCurrentSlide(skipIfCached = false) {
   console.log("[Viewer] renderCurrentSlide called, pdfDoc:", !!state.pdfDoc, "rendering:", state.rendering);
   if (!state.pdfDoc || state.rendering) return;
 
   const pageNum = Math.max(1, Math.min(state.currentSlide, state.totalSlides));
+  
+  // Skip if already cached and flag set
+  if (skipIfCached && state.slideCache.has(pageNum)) return;
+  
   console.log("[Viewer] Rendering page:", pageNum, "of", state.pdfDoc.numPages);
   if (pageNum < 1 || pageNum > state.pdfDoc.numPages) return;
 
@@ -274,7 +346,6 @@ async function renderCurrentSlide() {
   vsLoading.style.display = "flex";
 
   try {
-    // Cancel previous render if exists
     if (state.renderTask) {
       await state.renderTask.cancel();
     }
@@ -282,60 +353,56 @@ async function renderCurrentSlide() {
     const page = await state.pdfDoc.getPage(pageNum);
     console.log("[Viewer] Got page:", pageNum);
 
-    // Get the container dimensions
     const container = canvas.parentElement;
     const containerWidth = container.clientWidth;
     const containerHeight = container.clientHeight;
-    console.log("[Viewer] Container size:", containerWidth, "x", containerHeight);
 
-    // Get page viewport at scale 1 to get original dimensions
     const baseViewport = page.getViewport({ scale: 1 });
     const pageAspect = baseViewport.width / baseViewport.height;
     const containerAspect = containerWidth / containerHeight;
-    
-    // Determine scale based on orientation preference
+
     let scale;
-    
+
     if (state.orientation === "portrait") {
-      // Portrait mode: prioritize width, let height overflow if needed
       scale = (containerWidth / baseViewport.width) * 0.98;
     } else {
-      // Landscape mode (default): fit entire page in container
       if (pageAspect > containerAspect) {
-        // Page is wider than container - fit to width
         scale = (containerWidth / baseViewport.width) * 0.98;
       } else {
-        // Page is taller than container - fit to height
         scale = (containerHeight / baseViewport.height) * 0.98;
       }
     }
-    
-    // Increase scale for fullscreen mode
+
     if (state.isFullscreen) {
-      scale *= 1.5; // Make it bigger in fullscreen
+      scale *= 1.5;
     }
 
     const scaledViewport = page.getViewport({ scale });
-    console.log("[Viewer] Render scale:", scale, "viewport:", scaledViewport.width, "x", scaledViewport.height);
 
-    // Set canvas dimensions
     canvas.width = scaledViewport.width;
     canvas.height = scaledViewport.height;
 
-    // Center the canvas with CSS
     canvas.style.maxWidth = "100%";
     canvas.style.maxHeight = "100%";
     canvas.style.objectFit = "contain";
 
-    // Render
     const renderCtx = {
       canvasContext: ctx,
       viewport: scaledViewport,
+      // Disable unnecessary layers for faster rendering
+      annotationMode: pdfjsLib.AnnotationMode.DISABLE,
+      renderInteractiveForms: false,
     };
 
     state.renderTask = page.render(renderCtx);
     await state.renderTask.promise;
     state.renderTask = null;
+
+    // Cache the rendered slide as ImageBitmap
+    await cacheRenderedSlide(pageNum);
+    
+    // Preload next slide in background
+    preloadNextSlide(pageNum);
 
     console.log("[Viewer] Page rendered successfully");
     vsLoading.style.display = "none";
@@ -352,14 +419,84 @@ async function renderCurrentSlide() {
   }
 }
 
+async function cacheRenderedSlide(pageNum) {
+  try {
+    // Create ImageBitmap from canvas for fast reuse
+    const bitmap = await createImageBitmap(canvas);
+    state.slideCache.set(pageNum, { bitmap, width: canvas.width, height: canvas.height });
+    
+    // Evict old cache entries if too many
+    if (state.slideCache.size > state.maxCacheSize) {
+      const firstKey = state.slideCache.keys().next().value;
+      const old = state.slideCache.get(firstKey);
+      if (old) old.bitmap.close(); // Free GPU memory
+      state.slideCache.delete(firstKey);
+    }
+  } catch (err) {
+    console.warn("[Viewer] Cache failed:", err);
+  }
+}
+
+async function preloadNextSlide(currentPageNum) {
+  const nextPage = currentPageNum + 1;
+  if (nextPage > state.totalSlides || state.slideCache.has(nextPage)) return;
+  
+  // Cancel any existing preload
+  if (state.preloadTask) {
+    await state.preloadTask.cancel().catch(() => {});
+    state.preloadTask = null;
+  }
+  
+  // Preload in background with lower priority
+  setTimeout(async () => {
+    try {
+      const page = await state.pdfDoc.getPage(nextPage);
+      const baseViewport = page.getViewport({ scale: 1 });
+      
+      // Use lower scale for preloaded slides (faster)
+      const container = canvas.parentElement;
+      const scale = (container.clientWidth / baseViewport.width) * 0.5; // Half res for preload
+      const viewport = page.getViewport({ scale });
+      
+      // Offscreen canvas for preload
+      const offCanvas = document.createElement("canvas");
+      offCanvas.width = viewport.width;
+      offCanvas.height = viewport.height;
+      const offCtx = offCanvas.getContext("2d", { alpha: false });
+      
+      state.preloadTask = page.render({
+        canvasContext: offCtx,
+        viewport: viewport,
+        annotationMode: pdfjsLib.AnnotationMode.DISABLE,
+      });
+      
+      await state.preloadTask.promise;
+      state.preloadTask = null;
+      
+      // Store in cache
+      const bitmap = await createImageBitmap(offCanvas);
+      state.slideCache.set(nextPage, { 
+        bitmap, 
+        width: offCanvas.width, 
+        height: offCanvas.height,
+        isPreview: true // Flag to know this is lower quality
+      });
+      
+      console.log("[Viewer] Preloaded page:", nextPage);
+    } catch (err) {
+      // Silent fail for preload - it's just optimization
+      console.log("[Viewer] Preload failed:", err.message);
+    }
+  }, 100); // Small delay to not interfere with current slide rendering
+}
+
 // ─── UI Helpers ───────────────────────────────────────────────────────────────
 
 function showViewer() {
   connectScreen.style.display = "none";
   viewerSlide.style.display = "block";
   vsSessionBadge.textContent = state.sessionId;
-  
-  // Initial render after layout settles
+
   if (state.pdfDoc) {
     setTimeout(() => {
       console.log("[Viewer] Initial render after showViewer");
@@ -381,7 +518,6 @@ function hideReconnecting() {
 }
 
 function flashSlideChange() {
-  // Subtle flash effect to indicate slide change
   const flash = document.createElement("div");
   flash.className = "vs-flash";
   flash.style.cssText = `
@@ -417,26 +553,6 @@ function showToast(msg) {
   }, 2500);
 }
 
-// ─── Touch / Swipe for Manual Navigation (Optional) ───────────────────────────
-
-let touchStartX = 0;
-let touchEndX = 0;
-
-document.addEventListener("touchstart", (e) => {
-  touchStartX = e.changedTouches[0].screenX;
-});
-
-document.addEventListener("touchend", (e) => {
-  touchEndX = e.changedTouches[0].screenX;
-  handleSwipe();
-});
-
-function handleSwipe() {
-  // Optional: Swipe could show previous/next slide locally
-  // But for a pure viewer, we sync from presenter only
-  // Left for future enhancement if needed
-}
-
 // ─── Resize Handling ────────────────────────────────────────────────────────────
 
 let resizeTimeout = null;
@@ -448,11 +564,10 @@ window.addEventListener("resize", () => {
   }, 150);
 });
 
-// ─── Visibility API (Pause/Resume) ──────────────────────────────────────────────
+// ─── Visibility API ──────────────────────────────────────────────────────────────
 
 document.addEventListener("visibilitychange", () => {
   if (document.visibilityState === "visible" && state.pdfDoc) {
-    // Re-render when tab becomes visible (handles context loss)
     setTimeout(() => renderCurrentSlide(), 100);
   }
 });
@@ -463,9 +578,8 @@ const vsFullscreenBtn = $("vsFullscreenBtn");
 
 function toggleFullscreen() {
   const viewerSlideEl = $("viewerSlide");
-  
+
   if (!state.isFullscreen) {
-    // Enter fullscreen
     if (viewerSlideEl.requestFullscreen) {
       viewerSlideEl.requestFullscreen().catch(() => {});
     } else if (viewerSlideEl.webkitRequestFullscreen) {
@@ -475,7 +589,6 @@ function toggleFullscreen() {
     viewerSlideEl.classList.add("fs-mode");
     vsFullscreenBtn.textContent = "⊠";
   } else {
-    // Exit fullscreen
     if (document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
     } else if (document.webkitExitFullscreen) {
@@ -485,8 +598,7 @@ function toggleFullscreen() {
     viewerSlideEl.classList.remove("fs-mode");
     vsFullscreenBtn.textContent = "⛶";
   }
-  
-  // Re-render after fullscreen transition
+
   setTimeout(() => {
     if (state.pdfDoc) renderCurrentSlide();
   }, 100);
@@ -494,16 +606,14 @@ function toggleFullscreen() {
 
 vsFullscreenBtn.addEventListener("click", toggleFullscreen);
 
-// Handle fullscreen change events (from browser/OS)
 document.addEventListener("fullscreenchange", () => {
   const viewerSlideEl = $("viewerSlide");
   const isFS = !!document.fullscreenElement;
-  
+
   state.isFullscreen = isFS;
   viewerSlideEl.classList.toggle("fs-mode", isFS);
   vsFullscreenBtn.textContent = isFS ? "⊠" : "⛶";
-  
-  // Re-render at new dimensions
+
   setTimeout(() => {
     if (state.pdfDoc) renderCurrentSlide();
   }, 100);

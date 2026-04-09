@@ -96,15 +96,46 @@ function connectToSession() {
     totalSlides = ts;
     updateSlideDisplay();
   });
-  socket.on("pdf-loaded", ({ filename }) =>
-    showToast("📄 " + filename + " loaded"),
-  );
+
+  // ── Mid-session PDF swap notification ─────────────────────────────────────
+  socket.on("pdf-loaded", ({ filename }) => {
+    showToast("📄 New PDF: " + filename);
+    showPdfSwapBanner(filename);
+    // Reset slide counter display
+    currentSlide = 1;
+    updateSlideDisplay();
+  });
+
   socket.on("connect_error", () => setStatus(false));
   socket.on("disconnect", () => setStatus(false));
   socket.on("reconnect", () => {
     setStatus(true);
     socket.emit("join-session", { sessionId, role: "remote" });
   });
+}
+
+// ── PDF Swap Banner ───────────────────────────────────────────────────────────
+
+function showPdfSwapBanner(filename) {
+  const existing = document.getElementById("rcPdfSwapBanner");
+  if (existing) existing.remove();
+
+  const banner = document.createElement("div");
+  banner.id = "rcPdfSwapBanner";
+  banner.className = "rc-pdf-swap-banner";
+  banner.innerHTML = `<span>🔄</span> <span>New PDF: <strong>${filename}</strong></span>`;
+
+  // Insert just below the header
+  const pad = document.getElementById("remotePad");
+  const header = pad.querySelector(".rc-header");
+  header.insertAdjacentElement("afterend", banner);
+
+  requestAnimationFrame(() => banner.classList.add("show"));
+
+  setTimeout(() => {
+    banner.classList.remove("show");
+    setTimeout(() => banner.remove(), 400);
+  }, 4000);
 }
 
 function showPad() {
@@ -145,34 +176,6 @@ jumpBtn.addEventListener("click", () => {
 jumpInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") jumpBtn.click();
 });
-
-// ── Swipe ─────────────────────────────────────────────────────────────────────
-// DISABLED: Commented out to prevent interference with cursor control
-/*
-let touchStartX = 0;
-document.addEventListener(
-  "touchstart",
-  (e) => {
-    if (e.target.closest("textarea,.teleprompter-overlay,.rc-fs-overlay"))
-      return;
-    touchStartX = e.touches[0].clientX;
-  },
-  { passive: true },
-);
-document.addEventListener(
-  "touchend",
-  (e) => {
-    if (e.target.closest("textarea,.teleprompter-overlay,.rc-fs-overlay"))
-      return;
-    const dx = e.changedTouches[0].clientX - touchStartX;
-    if (Math.abs(dx) > 60) {
-      dx < 0 ? sendSlideChange("next") : sendSlideChange("prev");
-      animateSlideChange();
-    }
-  },
-  { passive: true },
-);
-*/
 
 // Bluetooth clicker keyboard support
 document.addEventListener("keydown", (e) => {
@@ -310,19 +313,16 @@ rcFullscreen.addEventListener("click", () => {
   rcFsOverlay.requestFullscreen?.().catch(() => {});
 });
 
-// Header fullscreen button - same functionality
 rcHeaderFullscreen.addEventListener("click", () => {
   rcFsOverlay.style.display = "flex";
   rcFsOverlay.requestFullscreen?.().catch(() => {});
 });
 
-// Cursor toggle button
 rcCursorToggle.addEventListener("click", () => {
   cursorEnabled = !cursorEnabled;
   rcCursorToggle.classList.toggle("active", cursorEnabled);
 
   if (!cursorEnabled && cursorActive) {
-    // Hide cursor if it's currently active
     handleCursorEnd();
   }
 
@@ -374,22 +374,18 @@ function handleCursorInteraction(e) {
   const x = (e.clientX || e.touches[0].clientX - rect.left) / rect.width;
   const y = (e.clientY || e.touches[0].clientY - rect.top) / rect.height;
 
-  // Normalize coordinates to 0-1 range
   const normalizedX = Math.max(0, Math.min(1, x));
   const normalizedY = Math.max(0, Math.min(1, y));
 
-  // Clear existing debounce timer
   if (cursorDebounceTimer) {
     clearTimeout(cursorDebounceTimer);
   }
 
-  // Send immediately for smooth movement, but debounce to prevent flooding
   sendCursorMove(normalizedX, normalizedY, true);
 
-  // Set up debounce for very rapid movements
   cursorDebounceTimer = setTimeout(() => {
     sendCursorMove(normalizedX, normalizedY, true);
-  }, 16); // ~60fps
+  }, 16);
 }
 
 function handleCursorEnd() {
@@ -397,10 +393,8 @@ function handleCursorEnd() {
   sendCursorMove(0, 0, false);
 }
 
-// Add cursor control to the control panel
 const controlPanel = document.querySelector(".rc-tab-panel");
 if (controlPanel) {
-  // Mouse events
   controlPanel.addEventListener("mousedown", (e) => {
     if (e.target.closest("button, input, textarea")) return;
     cursorActive = true;
@@ -419,7 +413,6 @@ if (controlPanel) {
   controlPanel.addEventListener("mouseup", handleCursorEnd);
   controlPanel.addEventListener("mouseleave", handleCursorEnd);
 
-  // Touch events
   controlPanel.addEventListener("touchstart", (e) => {
     if (e.target.closest("button, input, textarea")) return;
     cursorActive = true;
