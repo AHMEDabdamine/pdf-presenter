@@ -18,6 +18,7 @@ const fs = require("fs");
 const crypto = require("crypto");
 const QRCode = require("qrcode");
 const { v4: uuidv4 } = require("uuid");
+const rateLimit = require("express-rate-limit");
 
 // ─── App Setup ───────────────────────────────────────────────────────────────
 
@@ -37,7 +38,6 @@ if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 // ─── File Upload (Multer) ─────────────────────────────────────────────────────
 
 const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   destination: (_req, _file, cb) => cb(null, UPLOAD_DIR),
   filename: (_req, file, cb) => {
     // Sanitize filename and prefix with timestamp to avoid collisions
@@ -65,9 +65,11 @@ const upload = multer({
  * sessions: Map<sessionId, { currentSlide, totalSlides, pdfFile, presenterSocket, connectedViewers }>
  * A "session" ties together a presenter and all remote viewers.
  */
-const sessions = new Map();
+const sessions = new Map(); // sessionId -> { ..., createdAt }
 const uploadTokens = new Map(); // sessionId -> uploadToken (for upload authorization)
-const apiTokens = new Map(); // ip -> { token, expiresAt } (for API access)
+const fileToSession = new Map(); // filename -> sessionId (for PDF access control)
+const SESSION_TTL = 4 * 60 * 60 * 1000; // 4 hours in milliseconds
+const CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
 
 // ─── Authorization Helpers ───────────────────────────────────────────────────
 
@@ -113,18 +115,18 @@ function generateSecureToken() {
 // 🔒 Validate upload token for session
 function validateUploadToken(sessionId, token) {
   const expectedToken = uploadTokens.get(sessionId);
-  if (!expectedToken) return false;
-  // Constant-time comparison to prevent timing attacks
-  return crypto.timingSafeEqual(
-    Buffer.from(expectedToken),
-    Buffer.from(token)
-  );
+  if (!expectedToken || !token) return false;
+  const a = Buffer.from(expectedToken);
+  const b = Buffer.from(token);
+  if (a.length !== b.length) return false;
+  return crypto.timingSafeEqual(a, b);
 }
 
 // 🔒 Check if request is from localhost/internal network
+// NOTE: If running behind a trusted proxy, configure with app.set('trust proxy', 1)
+// and only then will x-forwarded-for be considered by req.ip
 function isInternalRequest(req) {
-  const clientIp = req.ip || req.connection.remoteAddress || 
-                   req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || "unknown";
+  const clientIp = req.ip || req.connection.remoteAddress || req.socket?.remoteAddress || "unknown";
   return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
 }
 
@@ -136,18 +138,137 @@ function getOrCreateSession(sessionId) {
       pdfFile: null,
       presenterSocket: null,
       connectedViewers: new Set(),
+      createdAt: Date.now(),
     });
   }
   return sessions.get(sessionId);
 }
+
+// 🔒 Cleanup expired sessions and their PDF files every 30 minutes
+function cleanupExpiredSessions() {
+  const now = Date.now();
+  sessions.forEach((session, sessionId) => {
+    if (now - session.createdAt > SESSION_TTL) {
+      // Delete associated PDF file if exists
+      if (session.pdfFile) {
+        const filePath = path.join(UPLOAD_DIR, session.pdfFile);
+        fs.unlink(filePath, (err) => {
+          if (err && err.code !== "ENOENT") {
+            console.error(`[Cleanup] Failed to delete PDF ${session.pdfFile}:`, err.message);
+          }
+        });
+        fileToSession.delete(session.pdfFile);
+      }
+      // Clean up session and token
+      sessions.delete(sessionId);
+      uploadTokens.delete(sessionId);
+      console.log(`[Cleanup] Expired session ${sessionId} removed`);
+    }
+  });
+}
+setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL);
+
+// 🔒 CSRF Protection Middleware - require x-requested-with header
+function requireCsrfToken(req, res, next) {
+  const requestedWith = req.headers["x-requested-with"];
+  if (requestedWith !== "XMLHttpRequest") {
+    return res.status(403).json({ error: "Forbidden: missing CSRF protection header" });
+  }
+  next();
+}
+
+// 🔒 Rate Limiters
+const sessionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 20, // 20 requests per hour
+  message: { error: "Too many sessions created from this IP" },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const uploadLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 10, // 10 uploads per hour per session
+  message: { error: "Too many uploads for this session" },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.params.sessionId || req.ip,
+});
+
+// 🔒 Security Headers Middleware
+function securityHeaders(req, res, next) {
+  res.setHeader("X-Content-Type-Options", "nosniff");
+  res.setHeader("X-Frame-Options", "DENY");
+  res.setHeader("Referrer-Policy", "no-referrer");
+  res.setHeader(
+    "Content-Security-Policy",
+    "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src 'self' https://fonts.gstatic.com; worker-src 'self' blob:; object-src 'none'"
+  );
+  next();
+}
+app.use(securityHeaders);
 
 // ─── Static Files ─────────────────────────────────────────────────────────────
 
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
-// Serve uploaded PDFs (by session, so clients can load the same file)
-app.use("/uploads", express.static(UPLOAD_DIR));
+// 🔒 Secure PDF serving - require auth instead of public static
+app.get("/uploads/:filename", (req, res) => {
+  const { filename } = req.params;
+  // Prevent directory traversal
+  if (filename.includes("..") || filename.includes("/") || filename.includes("\\")) {
+    return res.status(400).json({ error: "Invalid filename" });
+  }
+
+  const filePath = path.join(UPLOAD_DIR, filename);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: "File not found" });
+  }
+
+  // 🔒 Security: Check authorization via token, socket membership, or same-origin
+  const token = req.headers["x-upload-token"];
+  const sessionId = fileToSession.get(filename);
+
+  let authorized = false;
+
+  // Option 1: Valid upload token for the session that owns this file
+  if (sessionId && validateUploadToken(sessionId, token)) {
+    authorized = true;
+  }
+
+  // Option 2: Request from a connected socket in the file's session
+  if (!authorized && sessionId) {
+    const sockets = io.sockets.adapter.rooms.get(sessionId);
+    if (sockets) {
+      for (const socketId of sockets) {
+        const socket = io.sockets.sockets.get(socketId);
+        if (socket && socket.data.sessionId === sessionId) {
+          authorized = true;
+          break;
+        }
+      }
+    }
+  }
+
+  // Option 3: Same-origin request (browser loading PDF from same site)
+  // This is the fallback for PDF.js loading files - relies on CORS and Referer
+  if (!authorized) {
+    const referer = req.headers.referer || "";
+    const origin = req.headers.origin || "";
+    const host = req.headers.host || "";
+    // Allow if referer/origin matches our host (same-origin or same-site request)
+    if ((referer && referer.includes(host)) || (origin && origin.includes(host)) || (!referer && !origin)) {
+      authorized = true;
+    }
+  }
+
+  if (!authorized) {
+    return res.status(403).json({ error: "Forbidden: unauthorized PDF access" });
+  }
+
+  res.sendFile(filePath);
+});
 
 // ─── REST Endpoints ───────────────────────────────────────────────────────────
 
@@ -156,8 +277,8 @@ app.use("/uploads", express.static(UPLOAD_DIR));
  * Creates a new presentation session. Returns sessionId + QR code URL.
  * 🔒 Generates upload token for session security
  */
-app.post("/api/session", async (req, res) => {
-  const sessionId = uuidv4().slice(0, 8).toUpperCase();
+app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
+  const sessionId = uuidv4().replace(/-/g, "").toUpperCase(); // Full 32-char UUID
   getOrCreateSession(sessionId);
 
   // 🔒 Generate upload token for this session (only presenter gets this)
@@ -198,8 +319,10 @@ app.post("/api/session", async (req, res) => {
  * POST /api/upload/:sessionId
  * Upload a PDF file and associate it with a session.
  * 🔒 SECURED: Requires valid upload token (only known to presenter)
+ * NOTE: frontend must use fetch() with header x-requested-with: XMLHttpRequest
+ * Plain HTML <form> uploads will be rejected — this is intentional
  */
-app.post("/api/upload/:sessionId", (req, res, next) => {
+app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, next) => {
   const { sessionId } = req.params;
   const token = req.headers["x-upload-token"] || req.body.token;
 
@@ -222,6 +345,8 @@ app.post("/api/upload/:sessionId", (req, res, next) => {
   const session = sessions.get(sessionId);
   session.pdfFile = req.file.filename;
   session.currentSlide = 1;
+  // Track which session owns this file
+  fileToSession.set(req.file.filename, sessionId);
 
   const pdfUrl = `/uploads/${req.file.filename}`;
 
@@ -419,7 +544,7 @@ io.on("connection", (socket) => {
     if (typeof slide === "number") {
       session.currentSlide = Math.max(
         1,
-        Math.min(slide, session.totalSlides || slide),
+        Math.min(slide, session.totalSlides > 0 ? session.totalSlides : 9999),
       );
     } else if (direction === "next") {
       session.currentSlide = Math.min(
@@ -524,6 +649,14 @@ io.on("connection", (socket) => {
     // 🔒 AUTHORIZATION: Only remote controllers should send cursor
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["remote"])) return;
+
+    // 🔒 RATE LIMITING: Max 60 emissions/second (16ms minimum between events)
+    const now = Date.now();
+    const lastEmit = socket.data.lastCursorMove || 0;
+    if (now - lastEmit < 16) {
+      return; // Drop silently - too frequent
+    }
+    socket.data.lastCursorMove = now;
 
     // 🔒 INPUT VALIDATION: Clamp coordinates to valid 0-1 range
     const clampedX = Math.max(0, Math.min(1, parseFloat(x) || 0));

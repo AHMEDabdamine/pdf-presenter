@@ -64,7 +64,10 @@ const toast = $("toast");
 
 async function initSession() {
   try {
-    const res = await fetch("/api/session", { method: "POST" });
+    const res = await fetch("/api/session", {
+      method: "POST",
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+    });
     const data = await res.json();
 
     state.sessionId = data.sessionId;
@@ -207,6 +210,7 @@ async function uploadFile(file) {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/upload/${state.sessionId}`);
     xhr.setRequestHeader("X-Upload-Token", state.uploadToken); // 🔒 Auth header
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest"); // 🔒 CSRF protection
 
     xhr.upload.onprogress = (e) => {
       const pct = Math.round((e.loaded / e.total) * 90);
@@ -632,6 +636,7 @@ async function loadPdfLibrary() {
   try {
     const res = await fetch("/api/pdfs", {
       headers: {
+        "X-Requested-With": "XMLHttpRequest",
         "X-Session-Id": state.sessionId,
         "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
       },
@@ -677,6 +682,7 @@ async function loadPdfLibrary() {
           const res = await fetch(`/api/pdfs/${encodeURIComponent(filename)}`, {
             method: "DELETE",
             headers: {
+              "X-Requested-With": "XMLHttpRequest",
               "X-Session-Id": state.sessionId,
               "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
             },
