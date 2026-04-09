@@ -138,6 +138,7 @@ function getOrCreateSession(sessionId) {
       pdfFile: null,
       presenterSocket: null,
       connectedViewers: new Set(),
+      pendingRemotes: new Map(), // socketId -> { socketId, requestedAt }
       createdAt: Date.now(),
     });
   }
@@ -503,6 +504,19 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // 🔒 REMOTE APPROVAL: Remotes require presenter acceptance before joining
+    if (role === "remote") {
+      if (!session.presenterSocket) {
+        socket.emit("error", { message: "No presenter in session" });
+        return;
+      }
+      // Check if already approved (reconnecting)
+      if (!session.pendingRemotes.has(socket.id) && !socket.data.approvedRemote) {
+        socket.emit("error", { message: "Remote not approved. Request access first." });
+        return;
+      }
+    }
+
     socket.join(sessionId);
     socket.data.sessionId = sessionId;
     socket.data.role = role;
@@ -528,6 +542,100 @@ io.on("connection", (socket) => {
       totalSlides: session.totalSlides,
       pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
     });
+  });
+
+  /**
+   * remote-request-access: Sent by remote to request presenter approval.
+   * Presenter must accept before remote can join.
+   */
+  socket.on("remote-request-access", ({ sessionId }) => {
+    if (!sessionId) return;
+    const session = sessions.get(sessionId);
+    if (!session) {
+      socket.emit("error", { message: "Session not found" });
+      return;
+    }
+    if (!session.presenterSocket) {
+      socket.emit("error", { message: "No presenter in session" });
+      return;
+    }
+
+    // Add to pending remotes
+    session.pendingRemotes.set(socket.id, {
+      socketId: socket.id,
+      requestedAt: Date.now(),
+    });
+
+    // Notify presenter of pending remote
+    io.to(session.presenterSocket).emit("remote-pending", {
+      socketId: socket.id,
+      count: session.pendingRemotes.size,
+    });
+
+    // Confirm to remote that request was sent
+    socket.emit("remote-request-sent", { message: "Request sent to presenter" });
+    console.log(`[WS] Remote ${socket.id} requested access to session ${sessionId}`);
+  });
+
+  /**
+   * remote-accept: Presenter accepts a pending remote.
+   */
+  socket.on("remote-accept", ({ sessionId, remoteSocketId }) => {
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    if (!session.pendingRemotes.has(remoteSocketId)) {
+      socket.emit("error", { message: "Remote request not found" });
+      return;
+    }
+
+    // Mark as approved
+    const remoteSocket = io.sockets.sockets.get(remoteSocketId);
+    if (remoteSocket) {
+      remoteSocket.data.approvedRemote = true;
+      remoteSocket.data.sessionId = sessionId;
+      remoteSocket.data.role = "remote";
+      remoteSocket.join(sessionId);
+
+      // Notify remote they were accepted
+      remoteSocket.emit("remote-approved", { message: "Access granted" });
+      remoteSocket.emit("session-state", {
+        currentSlide: session.currentSlide,
+        totalSlides: session.totalSlides,
+        pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+      });
+    }
+
+    session.pendingRemotes.delete(remoteSocketId);
+    io.to(session.presenterSocket).emit("remote-accepted", { remoteSocketId });
+    console.log(`[WS] Presenter accepted remote ${remoteSocketId} in session ${sessionId}`);
+  });
+
+  /**
+   * remote-reject: Presenter rejects a pending remote.
+   */
+  socket.on("remote-reject", ({ sessionId, remoteSocketId }) => {
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+    if (!session.pendingRemotes.has(remoteSocketId)) {
+      socket.emit("error", { message: "Remote request not found" });
+      return;
+    }
+
+    const remoteSocket = io.sockets.sockets.get(remoteSocketId);
+    if (remoteSocket) {
+      remoteSocket.emit("remote-rejected", { message: "Access denied by presenter" });
+      remoteSocket.disconnect(true);
+    }
+
+    session.pendingRemotes.delete(remoteSocketId);
+    io.to(session.presenterSocket).emit("remote-rejected", { remoteSocketId });
+    console.log(`[WS] Presenter rejected remote ${remoteSocketId} in session ${sessionId}`);
   });
 
   /**

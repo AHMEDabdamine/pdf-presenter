@@ -160,6 +160,70 @@ function connectSocket() {
     state.connectedViewers = count;
     connCount.textContent = `${state.connectedRemotes} remote(s) connected · ${count} viewer(s)`;
   });
+
+  // 🔒 Remote approval system
+  socket.on("remote-pending", ({ socketId, count }) => {
+    showRemoteApprovalDialog(socketId, count);
+  });
+
+  socket.on("remote-accepted", ({ remoteSocketId }) => {
+    showToast(`✓ Remote ${remoteSocketId.slice(0, 8)}... accepted`);
+  });
+
+  socket.on("remote-rejected", ({ remoteSocketId }) => {
+    showToast(`✗ Remote ${remoteSocketId.slice(0, 8)}... rejected`);
+  });
+}
+
+// ─── Remote Approval UI ───────────────────────────────────────────────────────
+
+let pendingRemotes = [];
+
+function showRemoteApprovalDialog(socketId, count) {
+  pendingRemotes.push(socketId);
+  
+  // Create or update the approval dialog
+  let dialog = $("remoteApprovalDialog");
+  if (!dialog) {
+    dialog = document.createElement("div");
+    dialog.id = "remoteApprovalDialog";
+    dialog.className = "remote-approval-dialog";
+    document.body.appendChild(dialog);
+  }
+  
+  dialog.innerHTML = `
+    <div class="remote-approval-content">
+      <h3>🔐 Remote Access Request</h3>
+      <p>${count} remote(s) waiting for approval</p>
+      <p class="remote-id">ID: ${socketId.slice(0, 12)}...</p>
+      <div class="remote-approval-buttons">
+        <button class="btn-approve" onclick="approveRemote('${socketId}')">Accept</button>
+        <button class="btn-reject" onclick="rejectRemote('${socketId}')">Reject</button>
+      </div>
+    </div>
+  `;
+  dialog.style.display = "block";
+}
+
+function approveRemote(socketId) {
+  socket.emit("remote-accept", { sessionId: state.sessionId, remoteSocketId: socketId });
+  hideRemoteApprovalDialog(socketId);
+}
+
+function rejectRemote(socketId) {
+  socket.emit("remote-reject", { sessionId: state.sessionId, remoteSocketId: socketId });
+  hideRemoteApprovalDialog(socketId);
+}
+
+function hideRemoteApprovalDialog(socketId) {
+  pendingRemotes = pendingRemotes.filter(id => id !== socketId);
+  const dialog = $("remoteApprovalDialog");
+  if (dialog && pendingRemotes.length === 0) {
+    dialog.style.display = "none";
+  } else if (dialog && pendingRemotes.length > 0) {
+    // Show next pending remote
+    showRemoteApprovalDialog(pendingRemotes[0], pendingRemotes.length);
+  }
 }
 
 // ─── PDF Upload ───────────────────────────────────────────────────────────────

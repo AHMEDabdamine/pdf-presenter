@@ -1980,3 +1980,90 @@ button {
   max-width: 200px;
   max-height: 200px;
 }
+
+/* ══════════════════════════════════════════════════════════
+   REMOTE APPROVAL DIALOG
+   ══════════════════════════════════════════════════════════ */
+
+.remote-approval-dialog {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: none;
+  z-index: 300;
+  align-items: center;
+  justify-content: center;
+}
+
+.remote-approval-content {
+  background: var(--bg-card);
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius);
+  padding: 24px 32px;
+  text-align: center;
+  max-width: 360px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
+}
+
+.remote-approval-content h3 {
+  margin: 0 0 12px;
+  font-size: 1.25rem;
+  color: var(--text);
+}
+
+.remote-approval-content p {
+  margin: 0 0 8px;
+  color: var(--text-2);
+  font-size: 0.95rem;
+}
+
+.remote-approval-content .remote-id {
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--text-3);
+  margin: 12px 0;
+  padding: 8px 12px;
+  background: var(--bg-2);
+  border-radius: 6px;
+}
+
+.remote-approval-buttons {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: center;
+}
+
+.remote-approval-buttons button {
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: none;
+}
+
+.btn-approve {
+  background: var(--accent);
+  color: white;
+}
+
+.btn-approve:hover {
+  background: var(--accent-hover);
+}
+
+.btn-reject {
+  background: var(--bg-2);
+  color: var(--text-2);
+  border: 1px solid var(--border-2);
+}
+
+.btn-reject:hover {
+  background: var(--danger);
+  color: white;
+  border-color: var(--danger);
+}

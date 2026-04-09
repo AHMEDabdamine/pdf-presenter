@@ -76,9 +76,30 @@ function connectToSession() {
 
   socket = io({ transports: ["websocket", "polling"] });
 
-  socket.on("connect", () =>
-    socket.emit("join-session", { sessionId, role: "remote" }),
-  );
+  socket.on("connect", () => {
+    // 🔒 Request access first - presenter must approve
+    socket.emit("remote-request-access", { sessionId });
+  });
+
+  // Waiting for presenter approval
+  socket.on("remote-request-sent", ({ message }) => {
+    rcHint.textContent = "⏳ Waiting for presenter approval...";
+    rcHint.style.color = "var(--warning)";
+  });
+
+  // Access granted - now join as remote
+  socket.on("remote-approved", ({ message }) => {
+    rcHint.textContent = "✓ Access granted! Connecting...";
+    rcHint.style.color = "var(--success)";
+    socket.emit("join-session", { sessionId, role: "remote" });
+  });
+
+  // Access denied
+  socket.on("remote-rejected", ({ message }) => {
+    rcHint.textContent = "✗ " + message;
+    rcHint.style.color = "var(--danger)";
+    setTimeout(() => disconnect(), 2000);
+  });
 
   socket.on("session-state", ({ currentSlide: cs, totalSlides: ts }) => {
     currentSlide = cs || 1;
@@ -110,7 +131,10 @@ function connectToSession() {
   socket.on("disconnect", () => setStatus(false));
   socket.on("reconnect", () => {
     setStatus(true);
-    socket.emit("join-session", { sessionId, role: "remote" });
+    // Re-request access on reconnect if not already approved
+    if (!socket.data?.approvedRemote) {
+      socket.emit("remote-request-access", { sessionId });
+    }
   });
 }
 
