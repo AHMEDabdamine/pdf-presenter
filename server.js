@@ -15,6 +15,7 @@ const { Server } = require("socket.io");
 const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const QRCode = require("qrcode");
 const { v4: uuidv4 } = require("uuid");
 
@@ -23,7 +24,7 @@ const { v4: uuidv4 } = require("uuid");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: "*" },
+  cors: { origin: false }, // 🔒 SECURITY: Disable cross-origin - same-origin only
   maxHttpBufferSize: 50 * 1024 * 1024, // 50 MB for PDF uploads via socket
 });
 
@@ -65,6 +66,8 @@ const upload = multer({
  * A "session" ties together a presenter and all remote viewers.
  */
 const sessions = new Map();
+const uploadTokens = new Map(); // sessionId -> uploadToken (for upload authorization)
+const apiTokens = new Map(); // ip -> { token, expiresAt } (for API access)
 
 // ─── Authorization Helpers ───────────────────────────────────────────────────
 
@@ -102,6 +105,29 @@ function sanitizePdfFilename(pdfUrl) {
   return basename;
 }
 
+// 🔒 Generate cryptographically secure token
+function generateSecureToken() {
+  return crypto.randomBytes(32).toString("hex");
+}
+
+// 🔒 Validate upload token for session
+function validateUploadToken(sessionId, token) {
+  const expectedToken = uploadTokens.get(sessionId);
+  if (!expectedToken) return false;
+  // Constant-time comparison to prevent timing attacks
+  return crypto.timingSafeEqual(
+    Buffer.from(expectedToken),
+    Buffer.from(token)
+  );
+}
+
+// 🔒 Check if request is from localhost/internal network
+function isInternalRequest(req) {
+  const clientIp = req.ip || req.connection.remoteAddress || 
+                   req.headers["x-forwarded-for"]?.split(",")[0]?.trim() || "unknown";
+  return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
+}
+
 function getOrCreateSession(sessionId) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
@@ -128,10 +154,15 @@ app.use("/uploads", express.static(UPLOAD_DIR));
 /**
  * POST /api/session
  * Creates a new presentation session. Returns sessionId + QR code URL.
+ * 🔒 Generates upload token for session security
  */
 app.post("/api/session", async (req, res) => {
   const sessionId = uuidv4().slice(0, 8).toUpperCase();
   getOrCreateSession(sessionId);
+
+  // 🔒 Generate upload token for this session (only presenter gets this)
+  const uploadToken = generateSecureToken();
+  uploadTokens.set(sessionId, uploadToken);
 
   // Build the remote-control URL
   const host = req.headers.host;
@@ -160,14 +191,26 @@ app.post("/api/session", async (req, res) => {
     console.error("QR generation failed:", e.message);
   }
 
-  res.json({ sessionId, remoteUrl, qrDataUrl, viewerUrl, viewerQrDataUrl });
+  res.json({ sessionId, uploadToken, remoteUrl, qrDataUrl, viewerUrl, viewerQrDataUrl });
 });
 
 /**
  * POST /api/upload/:sessionId
  * Upload a PDF file and associate it with a session.
+ * 🔒 SECURED: Requires valid upload token (only known to presenter)
  */
-app.post("/api/upload/:sessionId", upload.single("pdf"), (req, res) => {
+app.post("/api/upload/:sessionId", (req, res, next) => {
+  const { sessionId } = req.params;
+  const token = req.headers["x-upload-token"] || req.body.token;
+
+  // 🔒 AUTHORIZATION: Validate upload token
+  if (!validateUploadToken(sessionId, token)) {
+    console.log(`[API] Rejected upload: invalid token for session ${sessionId}`);
+    return res.status(403).json({ error: "Forbidden: invalid or missing upload token" });
+  }
+
+  next();
+}, upload.single("pdf"), (req, res) => {
   const { sessionId } = req.params;
   if (!sessions.has(sessionId)) {
     return res.status(404).json({ error: "Session not found" });
@@ -195,11 +238,22 @@ app.post("/api/upload/:sessionId", upload.single("pdf"), (req, res) => {
 /**
  * GET /api/session/:sessionId
  * Returns current session state (for rejoining).
+ * 🔒 SECURED: Only accessible to same-origin or with valid token
  */
 app.get("/api/session/:sessionId", (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Session not found" });
+
+  // 🔒 AUTHORIZATION: Only allow internal requests or with valid token
+  const token = req.headers["x-upload-token"];
+  if (!isInternalRequest(req) && !validateUploadToken(sessionId, token)) {
+    // Return limited info to non-members
+    return res.json({
+      exists: true,
+      hasPdf: !!session.pdfFile,
+    });
+  }
 
   res.json({
     currentSlide: session.currentSlide,
@@ -211,8 +265,14 @@ app.get("/api/session/:sessionId", (req, res) => {
 /**
  * GET /api/sessions
  * Returns a list of all active sessions for the access page.
+ * 🔒 SECURED: Only accessible from localhost/internal network
  */
-app.get("/api/sessions", (_req, res) => {
+app.get("/api/sessions", (req, res) => {
+  // 🔒 AUTHORIZATION: Only allow from localhost/internal
+  if (!isInternalRequest(req)) {
+    return res.status(403).json({ error: "Forbidden: external access denied" });
+  }
+
   const activeSessions = [];
   sessions.forEach((data, id) => {
     // Only include sessions that have a PDF loaded or are active
@@ -230,8 +290,18 @@ app.get("/api/sessions", (_req, res) => {
 /**
  * GET /api/pdfs
  * Lists all uploaded PDFs available on the server.
+ * 🔒 SECURED: Only accessible from localhost/internal network or with valid session token
  */
-app.get("/api/pdfs", (_req, res) => {
+app.get("/api/pdfs", (req, res) => {
+  // 🔒 AUTHORIZATION: Check for internal request or valid session
+  const sessionId = req.headers["x-session-id"];
+  const token = req.headers["x-upload-token"];
+  const hasValidToken = sessionId && validateUploadToken(sessionId, token);
+
+  if (!isInternalRequest(req) && !hasValidToken) {
+    return res.status(403).json({ error: "Forbidden: external access denied" });
+  }
+
   try {
     const files = fs
       .readdirSync(UPLOAD_DIR)
@@ -246,8 +316,18 @@ app.get("/api/pdfs", (_req, res) => {
 /**
  * DELETE /api/pdfs/:filename
  * Deletes a PDF file from the server.
+ * 🔒 SECURED: Only accessible from localhost/internal network or with valid session token
  */
 app.delete("/api/pdfs/:filename", (req, res) => {
+  // 🔒 AUTHORIZATION: Check for internal request or valid session token
+  const sessionId = req.headers["x-session-id"];
+  const token = req.headers["x-upload-token"];
+  const hasValidToken = sessionId && validateUploadToken(sessionId, token);
+
+  if (!isInternalRequest(req) && !hasValidToken) {
+    return res.status(403).json({ error: "Forbidden: external access denied" });
+  }
+
   try {
     const { filename } = req.params;
     // Prevent directory traversal

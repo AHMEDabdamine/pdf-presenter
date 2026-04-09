@@ -2,7 +2,7 @@
 
 > Open-source PDF slide presenter with **real-time remote control** from any device.
 
-![License: MIT](https://img.shields.io/badge/Apache--2.0-green?style=for-the-badge)
+![License: APACHE](https://img.shields.io/badge/Apache--2.0-green?style=for-the-badge)
 ![Node.js](https://img.shields.io/badge/node-%3E%3D16-green.svg)
 
 ---

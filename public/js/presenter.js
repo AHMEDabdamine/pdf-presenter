@@ -26,6 +26,7 @@ const state = {
   rendering: false,
   remoteUrl: null,
   viewerUrl: null,
+  uploadToken: null, // 🔒 Secure token for API authorization
   connectedRemotes: 0,
   connectedViewers: 0,
   renderTask: null,
@@ -67,6 +68,7 @@ async function initSession() {
     const data = await res.json();
 
     state.sessionId = data.sessionId;
+    state.uploadToken = data.uploadToken; // 🔒 Store secure token
     state.remoteUrl = data.remoteUrl;
     state.viewerUrl = data.viewerUrl;
 
@@ -204,6 +206,7 @@ async function uploadFile(file) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/upload/${state.sessionId}`);
+    xhr.setRequestHeader("X-Upload-Token", state.uploadToken); // 🔒 Auth header
 
     xhr.upload.onprogress = (e) => {
       const pct = Math.round((e.loaded / e.total) * 90);
@@ -627,7 +630,12 @@ function updateStripHighlight() {
 
 async function loadPdfLibrary() {
   try {
-    const res = await fetch("/api/pdfs");
+    const res = await fetch("/api/pdfs", {
+      headers: {
+        "X-Session-Id": state.sessionId,
+        "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
+      },
+    });
     const pdfs = await res.json();
     const libList = $("libraryList");
     
@@ -666,7 +674,13 @@ async function loadPdfLibrary() {
         if (!confirm(`Delete "${decodeURIComponent(filename.replace(/^\d+-/, ""))}"?`)) return;
         
         try {
-          const res = await fetch(`/api/pdfs/${encodeURIComponent(filename)}`, { method: "DELETE" });
+          const res = await fetch(`/api/pdfs/${encodeURIComponent(filename)}`, {
+            method: "DELETE",
+            headers: {
+              "X-Session-Id": state.sessionId,
+              "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
+            },
+          });
           if (res.ok) {
             item.remove();
             showToast("✓ File deleted");
