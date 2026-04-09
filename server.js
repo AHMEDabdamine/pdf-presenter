@@ -1,6 +1,6 @@
 /**
  * PDF Presenter - Server
- * MIT License
+ * APACHE License
  *
  * Express + Socket.io server that:
  *  - Serves the static frontend
@@ -25,7 +25,7 @@ const rateLimit = require("express-rate-limit");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, {
-  cors: { origin: false }, // 🔒 SECURITY: Disable cross-origin - same-origin only
+  cors: { origin: false }, //  SECURITY: Disable cross-origin - same-origin only
   maxHttpBufferSize: 50 * 1024 * 1024, // 50 MB for PDF uploads via socket
 });
 
@@ -107,12 +107,12 @@ function sanitizePdfFilename(pdfUrl) {
   return basename;
 }
 
-// 🔒 Generate cryptographically secure token
+//  Generate cryptographically secure token
 function generateSecureToken() {
   return crypto.randomBytes(32).toString("hex");
 }
 
-// 🔒 Validate upload token for session
+//  Validate upload token for session
 function validateUploadToken(sessionId, token) {
   const expectedToken = uploadTokens.get(sessionId);
   if (!expectedToken || !token) return false;
@@ -122,7 +122,7 @@ function validateUploadToken(sessionId, token) {
   return crypto.timingSafeEqual(a, b);
 }
 
-// 🔒 Check if request is from localhost/internal network
+//  Check if request is from localhost/internal network
 // NOTE: If running behind a trusted proxy, configure with app.set('trust proxy', 1)
 // and only then will x-forwarded-for be considered by req.ip
 function isInternalRequest(req) {
@@ -144,7 +144,7 @@ function getOrCreateSession(sessionId) {
   return sessions.get(sessionId);
 }
 
-// 🔒 Cleanup expired sessions and their PDF files every 30 minutes
+//  Cleanup expired sessions and their PDF files every 30 minutes
 function cleanupExpiredSessions() {
   const now = Date.now();
   sessions.forEach((session, sessionId) => {
@@ -168,7 +168,7 @@ function cleanupExpiredSessions() {
 }
 setInterval(cleanupExpiredSessions, CLEANUP_INTERVAL);
 
-// 🔒 CSRF Protection Middleware - require x-requested-with header
+//  CSRF Protection Middleware - require x-requested-with header
 function requireCsrfToken(req, res, next) {
   const requestedWith = req.headers["x-requested-with"];
   if (requestedWith !== "XMLHttpRequest") {
@@ -177,7 +177,7 @@ function requireCsrfToken(req, res, next) {
   next();
 }
 
-// 🔒 Rate Limiters
+//  Rate Limiters
 const sessionLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   max: 20, // 20 requests per hour
@@ -195,7 +195,7 @@ const uploadLimiter = rateLimit({
   keyGenerator: (req) => req.params.sessionId || req.ip,
 });
 
-// 🔒 Security Headers Middleware
+//  Security Headers Middleware
 function securityHeaders(req, res, next) {
   res.setHeader("X-Content-Type-Options", "nosniff");
   res.setHeader("X-Frame-Options", "DENY");
@@ -213,7 +213,7 @@ app.use(securityHeaders);
 app.use(express.static(path.join(__dirname, "public")));
 app.use(express.json());
 
-// 🔒 Secure PDF serving - require auth instead of public static
+//  Secure PDF serving - require auth instead of public static
 app.get("/uploads/:filename", (req, res) => {
   const { filename } = req.params;
   // Prevent directory traversal
@@ -226,7 +226,7 @@ app.get("/uploads/:filename", (req, res) => {
     return res.status(404).json({ error: "File not found" });
   }
 
-  // 🔒 Security: Check authorization via token, socket membership, or same-origin
+  //  Security: Check authorization via token, socket membership, or same-origin
   const token = req.headers["x-upload-token"];
   const sessionId = fileToSession.get(filename);
 
@@ -275,13 +275,14 @@ app.get("/uploads/:filename", (req, res) => {
 /**
  * POST /api/session
  * Creates a new presentation session. Returns sessionId + QR code URL.
- * 🔒 Generates upload token for session security
+ *  Generates upload token for session security
  */
 app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
-  const sessionId = uuidv4().replace(/-/g, "").toUpperCase(); // Full 32-char UUID
+  //  SECURITY: Use 16 chars (2^64 combos) - secure against brute force with rate limiting
+  const sessionId = uuidv4().replace(/-/g, "").toUpperCase().slice(0, 16);
   getOrCreateSession(sessionId);
 
-  // 🔒 Generate upload token for this session (only presenter gets this)
+  //  Generate upload token for this session (only presenter gets this)
   const uploadToken = generateSecureToken();
   uploadTokens.set(sessionId, uploadToken);
 
@@ -318,7 +319,7 @@ app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
 /**
  * POST /api/upload/:sessionId
  * Upload a PDF file and associate it with a session.
- * 🔒 SECURED: Requires valid upload token (only known to presenter)
+ *  SECURED: Requires valid upload token (only known to presenter)
  * NOTE: frontend must use fetch() with header x-requested-with: XMLHttpRequest
  * Plain HTML <form> uploads will be rejected — this is intentional
  */
@@ -326,7 +327,7 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
   const { sessionId } = req.params;
   const token = req.headers["x-upload-token"] || req.body.token;
 
-  // 🔒 AUTHORIZATION: Validate upload token
+  //  AUTHORIZATION: Validate upload token
   if (!validateUploadToken(sessionId, token)) {
     console.log(`[API] Rejected upload: invalid token for session ${sessionId}`);
     return res.status(403).json({ error: "Forbidden: invalid or missing upload token" });
@@ -363,14 +364,14 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
 /**
  * GET /api/session/:sessionId
  * Returns current session state (for rejoining).
- * 🔒 SECURED: Only accessible to same-origin or with valid token
+ *  SECURED: Only accessible to same-origin or with valid token
  */
 app.get("/api/session/:sessionId", (req, res) => {
   const { sessionId } = req.params;
   const session = sessions.get(sessionId);
   if (!session) return res.status(404).json({ error: "Session not found" });
 
-  // 🔒 AUTHORIZATION: Only allow internal requests or with valid token
+  //  AUTHORIZATION: Only allow internal requests or with valid token
   const token = req.headers["x-upload-token"];
   if (!isInternalRequest(req) && !validateUploadToken(sessionId, token)) {
     // Return limited info to non-members
@@ -390,10 +391,10 @@ app.get("/api/session/:sessionId", (req, res) => {
 /**
  * GET /api/sessions
  * Returns a list of all active sessions for the access page.
- * 🔒 SECURED: Only accessible from localhost/internal network
+ *  SECURED: Only accessible from localhost/internal network
  */
 app.get("/api/sessions", (req, res) => {
-  // 🔒 AUTHORIZATION: Only allow from localhost/internal
+  //  AUTHORIZATION: Only allow from localhost/internal
   if (!isInternalRequest(req)) {
     return res.status(403).json({ error: "Forbidden: external access denied" });
   }
@@ -401,8 +402,9 @@ app.get("/api/sessions", (req, res) => {
   const activeSessions = [];
   sessions.forEach((data, id) => {
     // Only include sessions that have a PDF loaded or are active
+    // 🔒 Mask session ID for privacy - only show first 8 chars
     activeSessions.push({
-      id,
+      id: id.substring(0, 8) + "****",
       filename: data.pdfFile
         ? data.pdfFile.split("-").slice(1).join("-")
         : null,
@@ -415,10 +417,10 @@ app.get("/api/sessions", (req, res) => {
 /**
  * GET /api/pdfs
  * Lists all uploaded PDFs available on the server.
- * 🔒 SECURED: Only accessible from localhost/internal network or with valid session token
+ *  SECURED: Only accessible from localhost/internal network or with valid session token
  */
 app.get("/api/pdfs", (req, res) => {
-  // 🔒 AUTHORIZATION: Check for internal request or valid session
+  //  AUTHORIZATION: Check for internal request or valid session
   const sessionId = req.headers["x-session-id"];
   const token = req.headers["x-upload-token"];
   const hasValidToken = sessionId && validateUploadToken(sessionId, token);
@@ -441,10 +443,10 @@ app.get("/api/pdfs", (req, res) => {
 /**
  * DELETE /api/pdfs/:filename
  * Deletes a PDF file from the server.
- * 🔒 SECURED: Only accessible from localhost/internal network or with valid session token
+ *  SECURED: Only accessible from localhost/internal network or with valid session token
  */
 app.delete("/api/pdfs/:filename", (req, res) => {
-  // 🔒 AUTHORIZATION: Check for internal request or valid session token
+  //  AUTHORIZATION: Check for internal request or valid session token
   const sessionId = req.headers["x-session-id"];
   const token = req.headers["x-upload-token"];
   const hasValidToken = sessionId && validateUploadToken(sessionId, token);
@@ -479,7 +481,7 @@ io.on("connection", (socket) => {
   /**
    * join-session: Called by presenter, remote, or viewer clients.
    * role: "presenter" | "remote" | "viewer"
-   * 🔒 SECURED: Role cannot be changed after initial join. Only one presenter allowed.
+   *  SECURED: Role cannot be changed after initial join. Only one presenter allowed.
    */
   socket.on("join-session", ({ sessionId, role }) => {
     if (!sessionId) return;
@@ -487,14 +489,14 @@ io.on("connection", (socket) => {
 
     const session = getOrCreateSession(sessionId);
 
-    // 🔒 SECURITY: Prevent role changes after initial join
+    //  SECURITY: Prevent role changes after initial join
     if (socket.data.sessionId) {
       console.log(`[WS] Rejected: ${socket.data.role} tried to re-join as ${role}`);
       socket.emit("error", { message: "Forbidden: role cannot be changed after joining" });
       return;
     }
 
-    // 🔒 SECURITY: Prevent multiple presenters (first-come-first-serve)
+    //  SECURITY: Prevent multiple presenters (first-come-first-serve)
     if (role === "presenter" && session.presenterSocket) {
       console.log(`[WS] Rejected: presenter slot already taken in session ${sessionId}`);
       socket.emit("error", { message: "Forbidden: session already has a presenter" });
@@ -531,10 +533,10 @@ io.on("connection", (socket) => {
   /**
    * slide-change: Sent by presenter or remote to move slides.
    * direction: "next" | "prev" | number (absolute)
-   * 🔒 SECURED: Requires "presenter" or "remote" role + session membership
+   *  SECURED: Requires "presenter" or "remote" role + session membership
    */
   socket.on("slide-change", ({ sessionId, direction, slide }) => {
-    // 🔒 AUTHORIZATION: Only presenter or remote can change slides
+    //  AUTHORIZATION: Only presenter or remote can change slides
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["presenter", "remote"])) return;
 
@@ -563,17 +565,17 @@ io.on("connection", (socket) => {
 
   /**
    * set-total-slides: Presenter reports total page count after PDF loads.
-   * 🔒 SECURED: Requires "presenter" role + session membership + input validation
+   *  SECURED: Requires "presenter" role + session membership + input validation
    */
   socket.on("set-total-slides", ({ sessionId, totalSlides }) => {
-    // 🔒 AUTHORIZATION: Only presenter can set total slides
+    //  AUTHORIZATION: Only presenter can set total slides
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["presenter"])) return;
 
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    // 🔒 INPUT VALIDATION: Sanitize slide count
+    //  INPUT VALIDATION: Sanitize slide count
     const sanitizedCount = sanitizeSlideCount(totalSlides);
     if (sanitizedCount === null) {
       socket.emit("error", { message: "Invalid slide count" });
@@ -586,24 +588,24 @@ io.on("connection", (socket) => {
 
   /**
    * pdf-file-loaded: Presenter notifies server when loading PDF from library
-   * 🔒 SECURED: Requires "presenter" role + session membership + file path validation
+   *  SECURED: Requires "presenter" role + session membership + file path validation
    */
   socket.on("pdf-file-loaded", ({ sessionId, pdfUrl, filename }) => {
-    // 🔒 AUTHORIZATION: Only presenter can change PDFs
+    //  AUTHORIZATION: Only presenter can change PDFs
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["presenter"])) return;
 
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    // 🔒 INPUT VALIDATION: Sanitize PDF filename to prevent path traversal
+    //  INPUT VALIDATION: Sanitize PDF filename to prevent path traversal
     const pdfFile = sanitizePdfFilename(pdfUrl);
     if (!pdfFile) {
       socket.emit("error", { message: "Invalid PDF filename" });
       return;
     }
 
-    // 🔒 FILE EXISTENCE: Verify the file actually exists
+    //  FILE EXISTENCE: Verify the file actually exists
     const filePath = path.join(UPLOAD_DIR, pdfFile);
     if (!fs.existsSync(filePath)) {
       socket.emit("error", { message: "PDF file not found" });
@@ -625,10 +627,10 @@ io.on("connection", (socket) => {
   });
   /**
    * request-session-state: Client requests current session state (for recovery)
-   * 🔒 SECURED: Requires session membership (prevents session enumeration)
+   *  SECURED: Requires session membership (prevents session enumeration)
    */
   socket.on("request-session-state", ({ sessionId }) => {
-    // 🔒 AUTHORIZATION: Only members of the session can query its state
+    //  AUTHORIZATION: Only members of the session can query its state
     if (!requireSessionMatch(socket, sessionId)) return;
 
     const session = sessions.get(sessionId);
@@ -643,14 +645,14 @@ io.on("connection", (socket) => {
 
   /**
    * cursor-move: Remote broadcasts cursor position to presenter.
-   * 🔒 SECURED: Requires "remote" role + session membership + coordinate clamping
+   *  SECURED: Requires "remote" role + session membership + coordinate clamping
    */
   socket.on("cursor-move", ({ sessionId, x, y, active }) => {
-    // 🔒 AUTHORIZATION: Only remote controllers should send cursor
+    //  AUTHORIZATION: Only remote controllers should send cursor
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["remote"])) return;
 
-    // 🔒 RATE LIMITING: Max 60 emissions/second (16ms minimum between events)
+    //  RATE LIMITING: Max 60 emissions/second (16ms minimum between events)
     const now = Date.now();
     const lastEmit = socket.data.lastCursorMove || 0;
     if (now - lastEmit < 16) {
@@ -658,7 +660,7 @@ io.on("connection", (socket) => {
     }
     socket.data.lastCursorMove = now;
 
-    // 🔒 INPUT VALIDATION: Clamp coordinates to valid 0-1 range
+    //  INPUT VALIDATION: Clamp coordinates to valid 0-1 range
     const clampedX = Math.max(0, Math.min(1, parseFloat(x) || 0));
     const clampedY = Math.max(0, Math.min(1, parseFloat(y) || 0));
 
