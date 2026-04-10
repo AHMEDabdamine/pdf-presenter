@@ -17,6 +17,7 @@
     <header class="topbar" id="topbar">
       <div class="topbar-left">
         <span class="logo">⬡ Presenter</span>
+        <span class="session-name-display" id="sessionNameDisplay" title="Session Name" style="display: none; color: var(--accent); font-weight: 600; font-size: 0.9rem; margin-left: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Untitled Session</span>
         <span class="session-badge" id="sessionBadge" title="Session ID"
           >—</span
         >
@@ -54,6 +55,14 @@
         >
           👁️ Viewer
         </button>
+        <button
+          class="btn btn-danger"
+          id="endSessionBtn"
+          title="End Session"
+          style="display: none; background: var(--danger); color: white; margin-left: 8px;"
+        >
+          ✕ End
+        </button>
       </div>
     </header>
 
@@ -66,7 +75,18 @@
           Upload a PDF and start presenting. Control slides from any device.
         </p>
 
-        <div class="upload-zone" id="uploadZone">
+        <!-- Session Name Input -->
+        <div class="session-name-input" style="margin-bottom: 20px;">
+          <label for="sessionNameInput" style="display: block; color: var(--text-2); font-size: 0.85rem; margin-bottom: 6px;">Session name</label>
+          <input type="text" id="sessionNameInput" placeholder="Session XXXX" maxlength="60" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); color: var(--text); font-size: 1rem;" />
+        </div>
+
+        <!-- Start Session Button -->
+        <button id="startSessionBtn" class="btn btn-primary" style="width: 100%; margin-bottom: 20px;">
+          Start Session
+        </button>
+
+        <div class="upload-zone" id="uploadZone" style="display: none;">
           <input type="file" id="fileInput" accept=".pdf" multiple hidden />
           <div class="upload-icon">📄</div>
           <p>

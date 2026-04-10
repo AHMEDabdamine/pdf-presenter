@@ -78,7 +78,7 @@ function connectToSession() {
 
   socket.on("connect", () => {
     // 🔒 Request access first - presenter must approve
-    socket.emit("remote-request-access", { sessionId });
+    socket.emit("remote-request-access", { sessionId, deviceId: getDeviceId() });
   });
 
   // Waiting for presenter approval
@@ -87,11 +87,11 @@ function connectToSession() {
     rcHint.style.color = "var(--warning)";
   });
 
-  // Access granted - now join as remote
+  // Access granted - server already joined us
   socket.on("remote-approved", ({ message }) => {
-    rcHint.textContent = "✓ Access granted! Connecting...";
+    rcHint.textContent = "✓ " + message;
     rcHint.style.color = "var(--success)";
-    socket.emit("join-session", { sessionId, role: "remote" });
+    // Server already joined the session, no need to emit join-session
   });
 
   // Access denied
@@ -101,9 +101,10 @@ function connectToSession() {
     setTimeout(() => disconnect(), 2000);
   });
 
-  socket.on("session-state", ({ currentSlide: cs, totalSlides: ts }) => {
+  socket.on("session-state", ({ currentSlide: cs, totalSlides: ts, name }) => {
     currentSlide = cs || 1;
     totalSlides = ts || 0;
+    updateSessionNameDisplay(name);
     showPad();
     updateSlideDisplay();
   });
@@ -133,8 +134,21 @@ function connectToSession() {
     setStatus(true);
     // Re-request access on reconnect if not already approved
     if (!socket.data?.approvedRemote) {
-      socket.emit("remote-request-access", { sessionId });
+      socket.emit("remote-request-access", { sessionId, deviceId: getDeviceId() });
     }
+  });
+
+  // Session renamed - update display
+  socket.on("session-renamed", ({ name }) => {
+    updateSessionNameDisplay(name);
+  });
+
+  // Session ended - show message and redirect
+  socket.on("session-ended", ({ message }) => {
+    showToast(`⚠ ${message}`);
+    setTimeout(() => {
+      window.location.href = "/access.html";
+    }, 3000);
   });
 }
 
@@ -211,6 +225,15 @@ document.addEventListener("keydown", (e) => {
   if (e.key === "ArrowRight" || e.key === " ") sendSlideChange("next");
   if (e.key === "ArrowLeft") sendSlideChange("prev");
 });
+
+// ── Session Name Display ─────────────────────────────────────────────────────
+function updateSessionNameDisplay(name) {
+  const nameEl = document.getElementById("rcSessionName");
+  if (nameEl) {
+    nameEl.textContent = name || "Untitled Session";
+    nameEl.style.display = "inline";
+  }
+}
 
 // ── Display ───────────────────────────────────────────────────────────────────
 function updateSlideDisplay() {
@@ -383,33 +406,45 @@ function showToast(msg) {
 }
 
 // ── Cursor Control ─────────────────────────────────────────────────────────────
-let cursorDebounceTimer = null;
-
 function sendCursorMove(x, y, active) {
   if (socket && socket.connected) {
     socket.emit("cursor-move", { sessionId, x, y, active });
   }
 }
 
+// Generate or retrieve persistent device ID
+function getDeviceId() {
+  let deviceId = localStorage.getItem("pdf-presenter-device-id");
+  if (!deviceId) {
+    // Fallback for browsers without crypto.randomUUID()
+    if (crypto && crypto.randomUUID) {
+      deviceId = crypto.randomUUID();
+    } else {
+      // Generate a random hex string as fallback
+      const array = new Uint8Array(16);
+      crypto.getRandomValues(array);
+      deviceId = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+    }
+    localStorage.setItem("pdf-presenter-device-id", deviceId);
+  }
+  return deviceId;
+}
+
 function handleCursorInteraction(e) {
   if (!socket || !socket.connected || !cursorEnabled) return;
 
   const rect = e.currentTarget.getBoundingClientRect();
-  const x = (e.clientX || e.touches[0].clientX - rect.left) / rect.width;
-  const y = (e.clientY || e.touches[0].clientY - rect.top) / rect.height;
+  // Simple proportional mapping: touch position directly maps to slide position
+  // Full range of control panel maps to full range of slide
+  const x = ((e.clientX || e.touches[0].clientX) - rect.left) / rect.width;
+  const y = ((e.clientY || e.touches[0].clientY) - rect.top) / rect.height;
 
+  // Clamp to valid range
   const normalizedX = Math.max(0, Math.min(1, x));
   const normalizedY = Math.max(0, Math.min(1, y));
 
-  if (cursorDebounceTimer) {
-    clearTimeout(cursorDebounceTimer);
-  }
-
+  // Immediate send for maximum responsiveness
   sendCursorMove(normalizedX, normalizedY, true);
-
-  cursorDebounceTimer = setTimeout(() => {
-    sendCursorMove(normalizedX, normalizedY, true);
-  }, 16);
 }
 
 function handleCursorEnd() {

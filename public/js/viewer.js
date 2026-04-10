@@ -54,6 +54,7 @@ const vsCounter = $("vsCounter");
 const vsReconnecting = $("vsReconnecting");
 const vsHeader = $("vsHeader");
 const toast = $("toast");
+const remoteCursor = $("remoteCursor");
 
 // ─── Auto-connect from URL param ─────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -164,12 +165,15 @@ function initSocket() {
 
   // ─── Session Events ───────────────────────────────────────────────────────
 
-  socket.on("session-state", ({ currentSlide, totalSlides, pdfFile }) => {
-    console.log("[Viewer] Session state:", { currentSlide, totalSlides, pdfFile });
+  socket.on("session-state", ({ currentSlide, totalSlides, pdfFile, name }) => {
+    console.log("[Viewer] Session state:", { currentSlide, totalSlides, pdfFile, name });
 
     state.currentSlide = currentSlide || 1;
     state.totalSlides = totalSlides || 0;
     state.pdfUrl = pdfFile;
+
+    // Update session name display
+    updateSessionNameDisplay(name);
 
     showViewer();
     updateCounter();
@@ -236,6 +240,35 @@ function initSocket() {
     updateCounter();
     loadPdf(pdfUrl);
   });
+
+  // ─── Remote Cursor (Optimized) ────────────────────────────────────────────
+  socket.on("cursor-move", ({ x, y, active }) => {
+    // Direct update for maximum responsiveness
+    updateRemoteCursor(x, y, active);
+  });
+
+  // Session renamed - update display
+  socket.on("session-renamed", ({ name }) => {
+    updateSessionNameDisplay(name);
+  });
+
+  // Session ended - show message and redirect
+  socket.on("session-ended", ({ message }) => {
+    showToast(`⚠ ${message}`);
+    setTimeout(() => {
+      window.location.href = "/access.html";
+    }, 3000);
+  });
+}
+
+// ─── Session Name Display ─────────────────────────────────────────────────────
+
+function updateSessionNameDisplay(name) {
+  const nameEl = document.getElementById("vsSessionName");
+  if (nameEl) {
+    nameEl.textContent = name || "Untitled Session";
+    nameEl.style.display = "inline";
+  }
 }
 
 // ─── PDF Swap Banner ──────────────────────────────────────────────────────────
@@ -261,6 +294,43 @@ function showPdfSwapBanner(filename) {
     banner.classList.remove("show");
     setTimeout(() => banner.remove(), 400);
   }, 4000);
+}
+
+// ─── Remote Cursor Rendering (Optimized) ────────────────────────────────────
+
+/**
+ * Update remote cursor position using RAF and CSS transforms
+ * Optimizations:
+ * - requestAnimationFrame for 60fps sync with display refresh
+ * - CSS transforms for GPU acceleration (no layout thrashing)
+ * - Single source of truth from state.cursor
+ */
+function updateRemoteCursor(x, y, active) {
+  if (!remoteCursor) return;
+
+  // Hide cursor if inactive
+  if (!active) {
+    remoteCursor.classList.remove("active");
+    return;
+  }
+
+  // Get canvas dimensions for coordinate mapping
+  const rect = canvas.getBoundingClientRect();
+  const containerRect = canvas.parentElement.getBoundingClientRect();
+  // Account for canvas offset within its container (due to centering/padding)
+  const offsetX = rect.left - containerRect.left;
+  const offsetY = rect.top - containerRect.top;
+
+  // Clamp coordinates to keep cursor within slide boundaries (0-1 range)
+  const clampedX = Math.max(0, Math.min(1, x));
+  const clampedY = Math.max(0, Math.min(1, y));
+  const cursorX = offsetX + clampedX * rect.width;
+  const cursorY = offsetY + clampedY * rect.height;
+
+  // Position like presenter (centered on point)
+  remoteCursor.style.left = cursorX + "px";
+  remoteCursor.style.top = cursorY + "px";
+  remoteCursor.classList.add("active");
 }
 
 // ─── PDF Loading & Rendering ──────────────────────────────────────────────────

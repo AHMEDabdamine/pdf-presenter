@@ -130,7 +130,23 @@ function isInternalRequest(req) {
   return clientIp === "127.0.0.1" || clientIp === "::1" || clientIp === "::ffff:127.0.0.1";
 }
 
-function getOrCreateSession(sessionId) {
+//  Input sanitization for session names
+function sanitizeSessionName(name) {
+  if (!name || typeof name !== "string") return null;
+  // Strip leading/trailing whitespace
+  let sanitized = name.trim();
+  // Limit to 60 characters
+  if (sanitized.length > 60) sanitized = sanitized.slice(0, 60);
+  // Remove HTML tags and special characters - allow only letters, numbers, spaces, hyphens, underscores
+  sanitized = sanitized.replace(/<[^>]*>/g, ""); // Remove HTML tags
+  sanitized = sanitized.replace(/[^a-zA-Z0-9\s\-_]/g, ""); // Allow only allowed chars
+  // Collapse multiple spaces
+  sanitized = sanitized.replace(/\s+/g, " ");
+  // Return null if empty after sanitization
+  return sanitized.length > 0 ? sanitized : null;
+}
+
+function getOrCreateSession(sessionId, name = null) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
       currentSlide: 1,
@@ -139,6 +155,8 @@ function getOrCreateSession(sessionId) {
       presenterSocket: null,
       connectedViewers: new Set(),
       pendingRemotes: new Map(), // socketId -> { socketId, requestedAt }
+      approvedRemotes: new Set(), // socketIds that can rejoin without approval
+      name: sanitizeSessionName(name) || "Untitled Session",
       createdAt: Date.now(),
     });
   }
@@ -281,7 +299,14 @@ app.get("/uploads/:filename", (req, res) => {
 app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
   //  SECURITY: Use 16 chars (2^64 combos) - secure against brute force with rate limiting
   const sessionId = uuidv4().replace(/-/g, "").toUpperCase().slice(0, 16);
-  getOrCreateSession(sessionId);
+
+  // Get session name from request or generate default
+  let sessionName = req.body.name;
+  if (!sessionName) {
+    sessionName = `Session ${sessionId.slice(0, 4)}`;
+  }
+
+  getOrCreateSession(sessionId, sessionName);
 
   //  Generate upload token for this session (only presenter gets this)
   const uploadToken = generateSecureToken();
@@ -314,7 +339,8 @@ app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
     console.error("QR generation failed:", e.message);
   }
 
-  res.json({ sessionId, uploadToken, remoteUrl, qrDataUrl, viewerUrl, viewerQrDataUrl });
+  const session = sessions.get(sessionId);
+  res.json({ sessionId, uploadToken, name: session.name, remoteUrl, qrDataUrl, viewerUrl, viewerQrDataUrl });
 });
 
 /**
@@ -386,26 +412,22 @@ app.get("/api/session/:sessionId", (req, res) => {
     currentSlide: session.currentSlide,
     totalSlides: session.totalSlides,
     pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+    name: session.name,
   });
 });
 
 /**
  * GET /api/sessions
  * Returns a list of all active sessions for the access page.
- *  SECURED: Only accessible from localhost/internal network
+ *  Note: Session IDs are exposed so viewers can join from any device
  */
 app.get("/api/sessions", (req, res) => {
-  //  AUTHORIZATION: Only allow from localhost/internal
-  if (!isInternalRequest(req)) {
-    return res.status(403).json({ error: "Forbidden: external access denied" });
-  }
-
   const activeSessions = [];
   sessions.forEach((data, id) => {
     // Only include sessions that have a PDF loaded or are active
-    // 🔒 Mask session ID for privacy - only show first 8 chars
     activeSessions.push({
-      id: id.substring(0, 8) + "****",
+      id: id, // Full session ID needed for joining
+      name: data.name,
       filename: data.pdfFile
         ? data.pdfFile.split("-").slice(1).join("-")
         : null,
@@ -504,7 +526,7 @@ io.on("connection", (socket) => {
       return;
     }
 
-    // 🔒 REMOTE APPROVAL: Remotes require presenter acceptance before joining
+    //  REMOTE APPROVAL: Remotes require presenter acceptance before joining
     if (role === "remote") {
       if (!session.presenterSocket) {
         socket.emit("error", { message: "No presenter in session" });
@@ -548,8 +570,7 @@ io.on("connection", (socket) => {
    * remote-request-access: Sent by remote to request presenter approval.
    * Presenter must accept before remote can join.
    */
-  socket.on("remote-request-access", ({ sessionId }) => {
-    if (!sessionId) return;
+  socket.on("remote-request-access", ({ sessionId, deviceId }) => {
     const session = sessions.get(sessionId);
     if (!session) {
       socket.emit("error", { message: "Session not found" });
@@ -560,21 +581,46 @@ io.on("connection", (socket) => {
       return;
     }
 
+    // Check if device is already approved (remember this device)
+    if (deviceId && session.approvedRemotes.has(deviceId)) {
+      // Auto-join the session
+      socket.data.approvedRemote = true;
+      socket.data.sessionId = sessionId;
+      socket.data.role = "remote";
+      socket.data.deviceId = deviceId;
+      socket.join(sessionId);
+
+      socket.emit("remote-approved", { message: "Access granted (previously approved)" });
+      socket.emit("session-state", {
+        currentSlide: session.currentSlide,
+        totalSlides: session.totalSlides,
+        pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+        name: session.name,
+      });
+      console.log(`[WS] Device ${deviceId} auto-approved and joined session ${sessionId}`);
+      return;
+    }
+
+    // Store deviceId for this socket for later reference
+    socket.data.deviceId = deviceId;
+
     // Add to pending remotes
     session.pendingRemotes.set(socket.id, {
       socketId: socket.id,
+      deviceId: deviceId,
       requestedAt: Date.now(),
     });
 
     // Notify presenter of pending remote
     io.to(session.presenterSocket).emit("remote-pending", {
       socketId: socket.id,
+      deviceId: deviceId,
       count: session.pendingRemotes.size,
     });
 
     // Confirm to remote that request was sent
     socket.emit("remote-request-sent", { message: "Request sent to presenter" });
-    console.log(`[WS] Remote ${socket.id} requested access to session ${sessionId}`);
+    console.log(`[WS] Remote ${socket.id} (device: ${deviceId}) requested access to session ${sessionId}`);
   });
 
   /**
@@ -593,11 +639,19 @@ io.on("connection", (socket) => {
 
     // Mark as approved
     const remoteSocket = io.sockets.sockets.get(remoteSocketId);
+    const pendingRequest = session.pendingRemotes.get(remoteSocketId);
+
     if (remoteSocket) {
       remoteSocket.data.approvedRemote = true;
       remoteSocket.data.sessionId = sessionId;
       remoteSocket.data.role = "remote";
       remoteSocket.join(sessionId);
+
+      // Add device ID to approved remotes list (remember this device)
+      if (pendingRequest && pendingRequest.deviceId) {
+        session.approvedRemotes.add(pendingRequest.deviceId);
+        console.log(`[WS] Added device ${pendingRequest.deviceId} to approved list for session ${sessionId}`);
+      }
 
       // Notify remote they were accepted
       remoteSocket.emit("remote-approved", { message: "Access granted" });
@@ -605,6 +659,7 @@ io.on("connection", (socket) => {
         currentSlide: session.currentSlide,
         totalSlides: session.totalSlides,
         pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+        name: session.name,
       });
     }
 
@@ -748,6 +803,7 @@ io.on("connection", (socket) => {
       currentSlide: session.currentSlide,
       totalSlides: session.totalSlides,
       pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+      name: session.name,
     });
   });
 
@@ -760,10 +816,10 @@ io.on("connection", (socket) => {
     if (!requireSessionMatch(socket, sessionId)) return;
     if (!requireRole(socket, ["remote"])) return;
 
-    //  RATE LIMITING: Max 60 emissions/second (16ms minimum between events)
+    //  RATE LIMITING: Max 120 emissions/second (8ms minimum between events)
     const now = Date.now();
     const lastEmit = socket.data.lastCursorMove || 0;
-    if (now - lastEmit < 16) {
+    if (now - lastEmit < 8) {
       return; // Drop silently - too frequent
     }
     socket.data.lastCursorMove = now;
@@ -773,6 +829,68 @@ io.on("connection", (socket) => {
     const clampedY = Math.max(0, Math.min(1, parseFloat(y) || 0));
 
     socket.to(sessionId).emit("cursor-move", { x: clampedX, y: clampedY, active: !!active });
+  });
+
+  /**
+   * rename-session: Presenter updates the session name.
+   *  SECURED: Requires "presenter" role + session membership + name validation
+   */
+  socket.on("rename-session", ({ sessionId, name }) => {
+    //  AUTHORIZATION: Only presenter can rename
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    //  INPUT VALIDATION: Sanitize the name
+    const sanitizedName = sanitizeSessionName(name);
+    if (!sanitizedName) {
+      socket.emit("error", { message: "Invalid session name" });
+      return;
+    }
+
+    session.name = sanitizedName;
+    console.log(`[WS] Session ${sessionId} renamed to "${sanitizedName}"`);
+
+    // Broadcast to all clients
+    io.to(sessionId).emit("session-renamed", { name: sanitizedName });
+  });
+
+  /**
+   * end-session: Presenter explicitly ends the session.
+   *  SECURED: Requires "presenter" role + session membership
+   *  Cleans up all server-side resources
+   */
+  socket.on("end-session", ({ sessionId }) => {
+    //  AUTHORIZATION: Only presenter can end session
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    console.log(`[WS] Presenter ending session ${sessionId}`);
+
+    // Notify all clients that session has ended
+    io.to(sessionId).emit("session-ended", { message: "Session has ended" });
+
+    // Clean up PDF file if exists
+    if (session.pdfFile) {
+      const filePath = path.join(UPLOAD_DIR, session.pdfFile);
+      fs.unlink(filePath, (err) => {
+        if (err && err.code !== "ENOENT") {
+          console.error(`[WS] Failed to delete PDF ${session.pdfFile}:`, err.message);
+        }
+      });
+      fileToSession.delete(session.pdfFile);
+    }
+
+    // Clean up session and token
+    sessions.delete(sessionId);
+    uploadTokens.delete(sessionId);
+
+    console.log(`[WS] Session ${sessionId} ended and cleaned up`);
   });
 
   socket.on("disconnect", () => {
@@ -791,6 +909,13 @@ io.on("connection", (socket) => {
           count: session.connectedViewers.size,
         });
       }
+    }
+
+    // Clear approved remotes when presenter disconnects (session reset)
+    if (role === "presenter" && sessionId && sessions.has(sessionId)) {
+      const session = sessions.get(sessionId);
+      session.approvedRemotes.clear();
+      console.log(`[WS] Cleared approved remotes for session ${sessionId}`);
     }
   });
 });

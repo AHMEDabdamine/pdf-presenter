@@ -38,6 +38,7 @@
     <!-- Slide view (shown after connected) -->
     <div class="viewer-slide" id="viewerSlide" style="display: none">
       <div class="vs-header" id="vsHeader">
+        <span class="vs-session-name" id="vsSessionName" style="font-weight: 600; color: var(--accent); margin-right: 12px; display: none;">Untitled Session</span>
         <span class="vs-session-badge" id="vsSessionBadge">—</span>
         <span class="vs-status connected" id="vsStatusDot">● Live</span>
         <button class="vs-fullscreen-btn" id="vsFullscreenBtn" title="Fullscreen">⛶</button>
@@ -46,6 +47,8 @@
       <!-- Slide canvas container -->
       <div class="vs-canvas-wrap" id="vsCanvasWrap">
         <canvas id="viewerCanvas"></canvas>
+        <!-- Remote cursor indicator -->
+        <div class="remote-cursor" id="remoteCursor"></div>
         <div class="vs-waiting" id="vsWaiting" style="display: none">
           <div class="vs-waiting-icon">⏳</div>
           <span>Waiting for presenter to upload PDF...</span>

@@ -60,13 +60,38 @@ const remoteUrlEl = $("remoteUrlDisplay");
 const qrCanvas = $("qrCanvas");
 const toast = $("toast");
 
+// ─── Session Storage Helpers ──────────────────────────────────────────────────
+
+function saveSessionToStorage() {
+  if (state.sessionId && state.uploadToken) {
+    sessionStorage.setItem("presenter-session-id", state.sessionId);
+    sessionStorage.setItem("presenter-upload-token", state.uploadToken);
+  }
+}
+
+function clearSessionFromStorage() {
+  sessionStorage.removeItem("presenter-session-id");
+  sessionStorage.removeItem("presenter-upload-token");
+}
+
+function getSessionFromStorage() {
+  return {
+    sessionId: sessionStorage.getItem("presenter-session-id"),
+    uploadToken: sessionStorage.getItem("presenter-upload-token"),
+  };
+}
+
 // ─── Session Init ─────────────────────────────────────────────────────────────
 
-async function initSession() {
+async function initSession(name = null) {
   try {
     const res = await fetch("/api/session", {
       method: "POST",
-      headers: { "X-Requested-With": "XMLHttpRequest" },
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ name }),
     });
     const data = await res.json();
 
@@ -75,9 +100,13 @@ async function initSession() {
     state.remoteUrl = data.remoteUrl;
     state.viewerUrl = data.viewerUrl;
 
+    // Persist to sessionStorage for refresh recovery
+    saveSessionToStorage();
+
     // Update UI badges
     sessionBadge.textContent = data.sessionId;
     modalSessId.textContent = data.sessionId;
+    updateSessionNameDisplay(data.name);
 
     // Initial QR draw using saved IP address
     const savedIp = localStorage.getItem("presenter-ip");
@@ -92,6 +121,106 @@ async function initSession() {
     console.error("Session init failed:", err);
     showToast("⚠ Could not create session — is the server running?");
   }
+}
+
+// ─── Session Restore ────────────────────────────────────────────────────────────
+
+async function restoreSession() {
+  const { sessionId, uploadToken } = getSessionFromStorage();
+  if (!sessionId || !uploadToken) return false;
+
+  try {
+    // Try to fetch session state from server
+    const res = await fetch(`/api/session/${sessionId}`, {
+      headers: {
+        "X-Requested-With": "XMLHttpRequest",
+        "X-Upload-Token": uploadToken,
+      },
+    });
+
+    if (res.status === 404) {
+      // Session no longer exists
+      clearSessionFromStorage();
+      return false;
+    }
+
+    if (!res.ok) {
+      clearSessionFromStorage();
+      return false;
+    }
+
+    const data = await res.json();
+
+    // Restore state
+    state.sessionId = sessionId;
+    state.uploadToken = uploadToken;
+    state.currentSlide = data.currentSlide || 1;
+    state.totalSlides = data.totalSlides || 0;
+
+    // Update UI
+    sessionBadge.textContent = sessionId;
+    modalSessId.textContent = sessionId;
+    updateSessionNameDisplay(data.name);
+    updateCounter();
+
+    // Connect to WebSocket
+    connectSocket();
+
+    // If there's a PDF, load it
+    if (data.pdfFile) {
+      loadPdfFromUrl(data.pdfFile, null, { skipNotify: true });
+    } else {
+      // Show setup overlay if no PDF loaded yet
+      setupOverlay.style.display = "flex";
+    }
+
+    // Load PDF library
+    loadPdfLibrary();
+
+    showToast("✓ Session restored");
+    return true;
+  } catch (err) {
+    console.error("Session restore failed:", err);
+    clearSessionFromStorage();
+    return false;
+  }
+}
+
+// ─── End Session ────────────────────────────────────────────────────────────────
+
+function endSession() {
+  if (!socket || !state.sessionId) return;
+
+  // Emit end-session event to server
+  socket.emit("end-session", { sessionId: state.sessionId });
+
+  // Clear session storage
+  clearSessionFromStorage();
+
+  // Disconnect socket
+  socket.disconnect();
+
+  // Redirect to home/start screen
+  window.location.href = "/";
+}
+
+// ─── Session Name UI ────────────────────────────────────────────────────────────
+
+function updateSessionNameDisplay(name) {
+  const nameEl = $("sessionNameDisplay");
+  const endBtn = $("endSessionBtn");
+  if (nameEl) {
+    nameEl.textContent = name || "Untitled Session";
+    nameEl.style.display = "inline";
+  }
+  if (endBtn) {
+    endBtn.style.display = "inline-block";
+  }
+}
+
+function renameSession(newName) {
+  if (!socket || !state.sessionId) return;
+  socket.emit("rename-session", { sessionId: state.sessionId, name: newName });
 }
 
 // ─── WebSocket ────────────────────────────────────────────────────────────────
@@ -136,14 +265,16 @@ function connectSocket() {
   socket.on("cursor-move", ({ x, y, active }) => {
     if (active) {
       const rect = canvas.getBoundingClientRect();
-      const cursorX = x * rect.width;
-      const cursorY = y * rect.height;
+      // Clamp coordinates to keep cursor within slide boundaries (0-1 range)
+      const clampedX = Math.max(0, Math.min(1, x));
+      const clampedY = Math.max(0, Math.min(1, y));
+      const cursorX = clampedX * rect.width;
+      const cursorY = clampedY * rect.height;
 
-      requestAnimationFrame(() => {
-        artificialCursor.style.left = cursorX + "px";
-        artificialCursor.style.top = cursorY + "px";
-        artificialCursor.classList.add("active");
-      });
+      // Direct update for maximum responsiveness
+      artificialCursor.style.left = cursorX + "px";
+      artificialCursor.style.top = cursorY + "px";
+      artificialCursor.classList.add("active");
     } else {
       artificialCursor.classList.remove("active");
     }
@@ -162,8 +293,8 @@ function connectSocket() {
   });
 
   // 🔒 Remote approval system
-  socket.on("remote-pending", ({ socketId, count }) => {
-    showRemoteApprovalDialog(socketId, count);
+  socket.on("remote-pending", ({ socketId, deviceId, count }) => {
+    showRemoteApprovalDialog(socketId, deviceId, count);
   });
 
   socket.on("remote-accepted", ({ remoteSocketId }) => {
@@ -173,13 +304,28 @@ function connectSocket() {
   socket.on("remote-rejected", ({ remoteSocketId }) => {
     showToast(`✗ Remote ${remoteSocketId.slice(0, 8)}... rejected`);
   });
+
+  // Session renamed
+  socket.on("session-renamed", ({ name }) => {
+    updateSessionNameDisplay(name);
+    showToast(`✓ Session renamed to "${name}"`);
+  });
+
+  // Session ended (from another tab or explicit end)
+  socket.on("session-ended", ({ message }) => {
+    clearSessionFromStorage();
+    showToast(`⚠ ${message}`);
+    setTimeout(() => {
+      window.location.href = "/";
+    }, 2000);
+  });
 }
 
 // ─── Remote Approval UI ───────────────────────────────────────────────────────
 
 let pendingRemotes = [];
 
-function showRemoteApprovalDialog(socketId, count) {
+function showRemoteApprovalDialog(socketId, deviceId, count) {
   pendingRemotes.push(socketId);
   
   // Create or update the approval dialog
@@ -191,11 +337,14 @@ function showRemoteApprovalDialog(socketId, count) {
     document.body.appendChild(dialog);
   }
   
+  // Show device ID for identification
+  const displayId = deviceId ? deviceId.slice(0, 8) : socketId.slice(0, 12);
+  
   dialog.innerHTML = `
     <div class="remote-approval-content">
       <h3>🔐 Remote Access Request</h3>
       <p>${count} remote(s) waiting for approval</p>
-      <p class="remote-id">ID: ${socketId.slice(0, 12)}...</p>
+      <p class="remote-id">Device: ${displayId}...</p>
       <div class="remote-approval-buttons">
         <button class="btn-approve" onclick="approveRemote('${socketId}')">Accept</button>
         <button class="btn-reject" onclick="rejectRemote('${socketId}')">Reject</button>
@@ -1059,4 +1208,43 @@ function showToast(msg) {
 
 // ─── Boot ─────────────────────────────────────────────────────────────────────
 
-initSession();
+// Try to restore existing session, otherwise create new
+async function bootstrap() {
+  const restored = await restoreSession();
+  if (!restored) {
+    // No existing session - show setup overlay for new session creation
+    setupOverlay.style.display = "flex";
+  }
+}
+
+bootstrap();
+
+// ─── Start Session Button Handler ─────────────────────────────────────────────
+
+$("startSessionBtn")?.addEventListener("click", async () => {
+  const nameInput = $("sessionNameInput");
+  const sessionName = nameInput?.value?.trim() || null;
+
+  await initSession(sessionName);
+
+  // Show upload zone after session created
+  const uploadZone = $("uploadZone");
+  const startBtn = $("startSessionBtn");
+  const nameInputDiv = nameInput?.parentElement;
+
+  if (uploadZone) uploadZone.style.display = "block";
+  if (startBtn) startBtn.style.display = "none";
+  if (nameInputDiv) nameInputDiv.style.display = "none";
+
+  // Update subtitle
+  const subtitle = $("setupSubtitle");
+  if (subtitle) subtitle.textContent = "Session created! Upload a PDF to start presenting.";
+});
+
+// ─── End Session Button Handler ───────────────────────────────────────────────
+
+$("endSessionBtn")?.addEventListener("click", () => {
+  if (confirm("Are you sure you want to end this session? All viewers and remotes will be disconnected.")) {
+    endSession();
+  }
+});
