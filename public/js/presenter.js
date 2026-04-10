@@ -127,6 +127,7 @@ async function initSession(name = null) {
 
 async function restoreSession() {
   const { sessionId, uploadToken } = getSessionFromStorage();
+  console.log("[Restore] Session from storage:", { sessionId: !!sessionId, uploadToken: !!uploadToken });
   if (!sessionId || !uploadToken) return false;
 
   try {
@@ -137,19 +138,23 @@ async function restoreSession() {
         "X-Upload-Token": uploadToken,
       },
     });
+    console.log("[Restore] API response status:", res.status);
 
     if (res.status === 404) {
       // Session no longer exists
+      console.log("[Restore] Session 404, clearing storage");
       clearSessionFromStorage();
       return false;
     }
 
     if (!res.ok) {
+      console.log("[Restore] Response not OK, clearing storage");
       clearSessionFromStorage();
       return false;
     }
 
     const data = await res.json();
+    console.log("[Restore] API data:", data);
 
     // Restore state
     state.sessionId = sessionId;
@@ -161,7 +166,7 @@ async function restoreSession() {
     sessionBadge.textContent = sessionId;
     modalSessId.textContent = sessionId;
     updateSessionNameDisplay(data.name);
-    updateCounter();
+    updateCounterUI();
 
     // Connect to WebSocket
     connectSocket();
@@ -170,8 +175,19 @@ async function restoreSession() {
     if (data.pdfFile) {
       loadPdfFromUrl(data.pdfFile, null, { skipNotify: true });
     } else {
-      // Show setup overlay if no PDF loaded yet
+      // Show setup overlay for PDF upload only (session already exists)
       setupOverlay.style.display = "flex";
+      // Hide session creation elements, show only upload
+      const startBtn = $("startSessionBtn");
+      const nameInput = $("sessionNameInput");
+      const nameInputDiv = nameInput?.parentElement;
+      const uploadZone = $("uploadZone");
+      const subtitle = $("setupSubtitle");
+
+      if (startBtn) startBtn.style.display = "none";
+      if (nameInputDiv) nameInputDiv.style.display = "none";
+      if (uploadZone) uploadZone.style.display = "block";
+      if (subtitle) subtitle.textContent = "Session restored! Upload a PDF to continue presenting.";
     }
 
     // Load PDF library
@@ -294,6 +310,9 @@ function connectSocket() {
 
   // 🔒 Remote approval system
   socket.on("remote-pending", ({ socketId, deviceId, count }) => {
+    // Play notification sound
+    const audio = new Audio("/notification.wav");
+    audio.play().catch(() => {}); // Ignore autoplay restrictions
     showRemoteApprovalDialog(socketId, deviceId, count);
   });
 

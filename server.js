@@ -230,6 +230,8 @@ app.use(securityHeaders);
 // ─── Static Files ─────────────────────────────────────────────────────────────
 
 app.use(express.static(path.join(__dirname, "public")));
+// Serve notification sound from root
+app.use("/notification.wav", express.static(path.join(__dirname, "notification.wav")));
 app.use(express.json());
 
 //  Secure PDF serving - require auth instead of public static
