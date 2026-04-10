@@ -590,8 +590,22 @@ io.on("connection", (socket) => {
   /**
    * remote-request-access: Sent by remote to request presenter approval.
    * Presenter must accept before remote can join.
+   *  RATE LIMITED: 1 request per 5 seconds per socket
+   *  DEDUPLICATED: Same device cannot request multiple times
+   *  MAX PENDING: 10 pending requests per session maximum
    */
   socket.on("remote-request-access", ({ sessionId, deviceId }) => {
+    console.log(`[WS] remote-request-access from ${socket.id}, device: ${deviceId}, session: ${sessionId}`);
+    
+    //  RATE LIMITING: Prevent rapid re-requests (5 second cooldown)
+    const now = Date.now();
+    const lastRequest = socket.data.lastRemoteRequest || 0;
+    if (now - lastRequest < 5000) {
+      socket.emit("error", { message: "Please wait before requesting again" });
+      return;
+    }
+    socket.data.lastRemoteRequest = now;
+
     const session = sessions.get(sessionId);
     if (!session) {
       socket.emit("error", { message: "Session not found" });
@@ -604,12 +618,14 @@ io.on("connection", (socket) => {
 
     // Check if device is already approved (remember this device)
     if (deviceId && session.approvedRemotes.has(deviceId)) {
+      console.log(`[WS] Auto-approving device ${deviceId} for session ${sessionId}`);
       // Auto-join the session
       socket.data.approvedRemote = true;
       socket.data.sessionId = sessionId;
       socket.data.role = "remote";
       socket.data.deviceId = deviceId;
       socket.join(sessionId);
+      console.log(`[WS] Socket ${socket.id} assigned sessionId: ${socket.data.sessionId}`);
 
       socket.emit("remote-approved", { message: "Access granted (previously approved)" });
       socket.emit("session-state", {
@@ -619,6 +635,22 @@ io.on("connection", (socket) => {
         name: session.name,
       });
       console.log(`[WS] Device ${deviceId} auto-approved and joined session ${sessionId}`);
+      return;
+    }
+
+    //  DEDUPLICATION: Check if this device already has a pending request
+    if (deviceId) {
+      for (const [existingSocketId, pending] of session.pendingRemotes) {
+        if (pending.deviceId === deviceId) {
+          socket.emit("remote-request-sent", { message: "Request already pending" });
+          return;
+        }
+      }
+    }
+
+    //  MAX PENDING: Limit total pending requests per session
+    if (session.pendingRemotes.size >= 10) {
+      socket.emit("error", { message: "Too many pending requests. Please try again later." });
       return;
     }
 
@@ -663,10 +695,12 @@ io.on("connection", (socket) => {
     const pendingRequest = session.pendingRemotes.get(remoteSocketId);
 
     if (remoteSocket) {
+      console.log(`[WS] remote-accept: Setting sessionId for socket ${remoteSocket.id} to ${sessionId}`);
       remoteSocket.data.approvedRemote = true;
       remoteSocket.data.sessionId = sessionId;
       remoteSocket.data.role = "remote";
       remoteSocket.join(sessionId);
+      console.log(`[WS] remote-accept: Socket ${remoteSocket.id} sessionId now: ${remoteSocket.data.sessionId}`);
 
       // Add device ID to approved remotes list (remember this device)
       if (pendingRequest && pendingRequest.deviceId) {

@@ -14,7 +14,7 @@
  */
 
 // ─── PDF.js Configuration ─────────────────────────────────────────────────────
-pdfjsLib.GlobalWorkerOptions.workerSrc = "/pdf.worker.min.js";
+pdfjsLib.GlobalWorkerOptions.workerSrc = "../vendor/pdf.worker.min.js";
 pdfjsLib.GlobalWorkerOptions.standardFontDataUrl = "/vendor/standard_fonts/";
 
 // ─── State ────────────────────────────────────────────────────────────────────
@@ -26,7 +26,7 @@ const state = {
   rendering: false,
   remoteUrl: null,
   viewerUrl: null,
-  uploadToken: null, // 🔒 Secure token for API authorization
+  uploadToken: null, //  Secure token for API authorization
   connectedRemotes: 0,
   connectedViewers: 0,
   renderTask: null,
@@ -96,7 +96,7 @@ async function initSession(name = null) {
     const data = await res.json();
 
     state.sessionId = data.sessionId;
-    state.uploadToken = data.uploadToken; // 🔒 Store secure token
+    state.uploadToken = data.uploadToken; //  Store secure token
     state.remoteUrl = data.remoteUrl;
     state.viewerUrl = data.viewerUrl;
 
@@ -303,7 +303,7 @@ function connectSocket() {
     connCount.textContent = `${state.connectedRemotes} remote(s) connected · ${count} viewer(s)`;
   });
 
-  // 🔒 Remote approval system
+  //  Remote approval system
   socket.on("remote-pending", ({ socketId, deviceId, count }) => {
     // Play notification sound
     const audio = new Audio("/notification.wav");
@@ -443,8 +443,8 @@ async function uploadFile(file) {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open("POST", `/api/upload/${state.sessionId}`);
-    xhr.setRequestHeader("X-Upload-Token", state.uploadToken); // 🔒 Auth header
-    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest"); // 🔒 CSRF protection
+    xhr.setRequestHeader("X-Upload-Token", state.uploadToken); //  Auth header
+    xhr.setRequestHeader("X-Requested-With", "XMLHttpRequest"); //  CSRF protection
 
     xhr.upload.onprogress = (e) => {
       const pct = Math.round((e.loaded / e.total) * 90);
@@ -872,7 +872,7 @@ async function loadPdfLibrary() {
       headers: {
         "X-Requested-With": "XMLHttpRequest",
         "X-Session-Id": state.sessionId,
-        "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
+        "X-Upload-Token": state.uploadToken, //  Auth headers
       },
     });
     const pdfs = await res.json();
@@ -925,7 +925,7 @@ async function loadPdfLibrary() {
             headers: {
               "X-Requested-With": "XMLHttpRequest",
               "X-Session-Id": state.sessionId,
-              "X-Upload-Token": state.uploadToken, // 🔒 Auth headers
+              "X-Upload-Token": state.uploadToken, //  Auth headers
             },
           });
           if (res.ok) {
