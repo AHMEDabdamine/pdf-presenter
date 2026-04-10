@@ -273,6 +273,12 @@ function updateSessionNameDisplay(name) {
 
 // ─── PDF Swap Banner ──────────────────────────────────────────────────────────
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function showPdfSwapBanner(filename) {
   // Remove any existing banner
   const existing = document.getElementById("pdfSwapBanner");
@@ -281,7 +287,7 @@ function showPdfSwapBanner(filename) {
   const banner = document.createElement("div");
   banner.id = "pdfSwapBanner";
   banner.className = "pdf-swap-banner";
-  banner.innerHTML = `<span>🔄</span> <span>Presenter switched to: <strong>${filename}</strong></span>`;
+  banner.innerHTML = `<span>🔄</span> <span>Presenter switched to: <strong>${escapeHtml(filename)}</strong></span>`;
   document.body.appendChild(banner);
 
   // Animate in

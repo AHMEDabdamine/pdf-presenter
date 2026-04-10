@@ -57,6 +57,7 @@ This video covers:
 ```bash
 git clone https://github.com/AHMEDabdamine/pdf-presenter.git
 cd pdf-presenter
+sudo chmod +x linux-install.sh start-app-lnx.sh
 ./linux-install.sh
 ```
 

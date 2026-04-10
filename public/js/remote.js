@@ -154,6 +154,12 @@ function connectToSession() {
 
 // ── PDF Swap Banner ───────────────────────────────────────────────────────────
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function showPdfSwapBanner(filename) {
   const existing = document.getElementById("rcPdfSwapBanner");
   if (existing) existing.remove();
@@ -161,7 +167,7 @@ function showPdfSwapBanner(filename) {
   const banner = document.createElement("div");
   banner.id = "rcPdfSwapBanner";
   banner.className = "rc-pdf-swap-banner";
-  banner.innerHTML = `<span>🔄</span> <span>New PDF: <strong>${filename}</strong></span>`;
+  banner.innerHTML = `<span>🔄</span> <span>New PDF: <strong>${escapeHtml(filename)}</strong></span>`;
 
   // Insert just below the header
   const pad = document.getElementById("remotePad");

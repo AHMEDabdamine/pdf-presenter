@@ -372,6 +372,25 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
     return res.status(400).json({ error: "No PDF uploaded" });
   }
 
+  //  SECURITY: Verify file magic bytes (PDF files start with %PDF)
+  try {
+    const fd = fs.openSync(req.file.path, "r");
+    const buffer = Buffer.alloc(4);
+    fs.readSync(fd, buffer, 0, 4, 0);
+    fs.closeSync(fd);
+
+    // PDF magic bytes: %PDF (0x25 0x50 0x44 0x46)
+    if (buffer.toString("ascii", 0, 4) !== "%PDF") {
+      // Delete the invalid file
+      fs.unlinkSync(req.file.path);
+      return res.status(400).json({ error: "Invalid file: not a valid PDF" });
+    }
+  } catch (err) {
+    console.error("[Upload] Magic bytes check failed:", err);
+    fs.unlinkSync(req.file.path);
+    return res.status(500).json({ error: "Failed to verify file" });
+  }
+
   const session = sessions.get(sessionId);
   session.pdfFile = req.file.filename;
   session.currentSlide = 1;

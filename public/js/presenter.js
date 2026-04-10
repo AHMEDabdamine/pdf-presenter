@@ -127,7 +127,6 @@ async function initSession(name = null) {
 
 async function restoreSession() {
   const { sessionId, uploadToken } = getSessionFromStorage();
-  console.log("[Restore] Session from storage:", { sessionId: !!sessionId, uploadToken: !!uploadToken });
   if (!sessionId || !uploadToken) return false;
 
   try {
@@ -138,23 +137,19 @@ async function restoreSession() {
         "X-Upload-Token": uploadToken,
       },
     });
-    console.log("[Restore] API response status:", res.status);
 
     if (res.status === 404) {
       // Session no longer exists
-      console.log("[Restore] Session 404, clearing storage");
       clearSessionFromStorage();
       return false;
     }
 
     if (!res.ok) {
-      console.log("[Restore] Response not OK, clearing storage");
       clearSessionFromStorage();
       return false;
     }
 
     const data = await res.json();
-    console.log("[Restore] API data:", data);
 
     // Restore state
     state.sessionId = sessionId;
@@ -359,14 +354,21 @@ function showRemoteApprovalDialog(socketId, deviceId, count) {
   // Show device ID for identification
   const displayId = deviceId ? deviceId.slice(0, 8) : socketId.slice(0, 12);
   
+  // Escape HTML to prevent XSS
+  const escapeHtml = (text) => {
+    const div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
+  };
+  
   dialog.innerHTML = `
     <div class="remote-approval-content">
       <h3>🔐 Remote Access Request</h3>
-      <p>${count} remote(s) waiting for approval</p>
-      <p class="remote-id">Device: ${displayId}...</p>
+      <p>${escapeHtml(String(count))} remote(s) waiting for approval</p>
+      <p class="remote-id">Device: ${escapeHtml(displayId)}...</p>
       <div class="remote-approval-buttons">
-        <button class="btn-approve" onclick="approveRemote('${socketId}')">Accept</button>
-        <button class="btn-reject" onclick="rejectRemote('${socketId}')">Reject</button>
+        <button class="btn-approve" onclick="approveRemote('${escapeHtml(socketId)}')">Accept</button>
+        <button class="btn-reject" onclick="rejectRemote('${escapeHtml(socketId)}')">Reject</button>
       </div>
     </div>
   `;
@@ -881,13 +883,20 @@ async function loadPdfLibrary() {
       return;
     }
 
+    // Escape HTML helper
+    const escapeHtml = (text) => {
+      const div = document.createElement("div");
+      div.textContent = text;
+      return div.innerHTML;
+    };
+    
     $("pdfLibrary").style.display = "block";
     libList.innerHTML = pdfs
       .slice(0, 5)
       .map(
         (p) =>
-          `<div class="library-item" data-url="${p.url}" data-filename="${p.name}">
-        <span class="library-name">${decodeURIComponent(p.name.replace(/^\d+-/, ""))}</span>
+          `<div class="library-item" data-url="${escapeHtml(p.url)}" data-filename="${escapeHtml(p.name)}">
+        <span class="library-name">${escapeHtml(decodeURIComponent(p.name.replace(/^\d+-/, "")))}</span>
         <div class="library-actions">
           <span class="library-load">Load →</span>
           <button class="library-delete" title="Delete file">🗑️</button>
