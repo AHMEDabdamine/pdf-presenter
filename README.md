@@ -259,4 +259,6 @@ location / {
 
 ## License
 
-MIT © 2024 — Free to use, modify, and distribute.
+Apache License 2.0 © 2024 — Free to use, modify, and distribute.
+
+See [LICENSE](LICENSE) for full text.
