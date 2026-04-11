@@ -410,6 +410,14 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
 });
 
 /**
+ * GET /health
+ * Health check endpoint for Docker container monitoring
+ */
+app.get("/health", (req, res) => {
+  res.status(200).json({ status: "ok", timestamp: new Date().toISOString() });
+});
+
+/**
  * GET /api/session/:sessionId
  * Returns current session state (for rejoining).
  *  SECURED: Only accessible to same-origin or with valid token

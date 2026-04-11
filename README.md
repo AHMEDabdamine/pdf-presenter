@@ -90,6 +90,50 @@ start-app-win.bat
 - Display all available network URLs
 - Launch the application on http://localhost:3000
 
+### Docker Deployment (Recommended for Servers)
+
+**Quick Start with Docker Compose:**
+
+```bash
+# Clone the repository
+git clone https://github.com/AHMEDabdamine/pdf-presenter.git
+cd pdf-presenter
+
+# Start the container
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop the container
+docker-compose down
+```
+
+**Manual Docker Build:**
+
+```bash
+# Build the image
+docker build -t pdf-presenter .
+
+# Run the container
+docker run -d \
+  -p 3000:3000 \
+  -v $(pwd)/uploads:/app/uploads \
+  --name pdf-presenter \
+  --restart unless-stopped \
+  pdf-presenter
+```
+
+**Docker Environment Variables:**
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `PORT` | `3000` | Server port |
+| `NODE_ENV` | `production` | Environment mode |
+| `SESSION_TTL` | `4` | Session lifetime in hours |
+
+Copy `.env.example` to `.env` and customize as needed.
+
 ### Manual Installation
 
 #### Prerequisites
