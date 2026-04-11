@@ -83,7 +83,7 @@ function getSessionFromStorage() {
 
 // ─── Session Init ─────────────────────────────────────────────────────────────
 
-async function initSession(name = null) {
+async function initSession(name = null, password = null) {
   try {
     const res = await fetch("/api/session", {
       method: "POST",
@@ -91,7 +91,7 @@ async function initSession(name = null) {
         "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ name }),
+      body: JSON.stringify({ name, password }),
     });
     const data = await res.json();
 
@@ -1249,20 +1249,38 @@ bootstrap();
 
 // ─── Start Session Button Handler ─────────────────────────────────────────────
 
+// Allow Enter key to submit from name or password input
+$("sessionNameInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("startSessionBtn")?.click();
+});
+$("sessionPasswordInput")?.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") $("startSessionBtn")?.click();
+});
+
 $("startSessionBtn")?.addEventListener("click", async () => {
   const nameInput = $("sessionNameInput");
   const sessionName = nameInput?.value?.trim() || null;
 
-  await initSession(sessionName);
+  //  SECURITY: Get optional viewer password (min 4 chars if provided)
+  const passwordInput = $("sessionPasswordInput");
+  const password = passwordInput?.value?.trim() || null;
+  if (password && password.length < 4) {
+    showToast("⚠ Password must be at least 4 characters");
+    return;
+  }
+
+  await initSession(sessionName, password);
 
   // Show upload zone after session created
   const uploadZone = $("uploadZone");
   const startBtn = $("startSessionBtn");
   const nameInputDiv = nameInput?.parentElement;
+  const passwordInputDiv = passwordInput?.parentElement;
 
   if (uploadZone) uploadZone.style.display = "block";
   if (startBtn) startBtn.style.display = "none";
   if (nameInputDiv) nameInputDiv.style.display = "none";
+  if (passwordInputDiv) passwordInputDiv.style.display = "none";
 
   // Update subtitle
   const subtitle = $("setupSubtitle");

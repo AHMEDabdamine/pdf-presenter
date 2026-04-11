@@ -139,10 +139,10 @@
                     <div class="session-item">
                         <div class="session-info">
                             <span class="session-id">${s.id}</span>
-                            <span class="session-filename">${s.name || "Untitled Session"}</span>
+                            <span class="session-filename">${s.name || "Untitled Session"} ${s.hasPassword ? '🔒' : ''}</span>
                         </div>
                         <div class="action-buttons">
-                            <a href="/viewer.html?session=${s.id}" class="btn btn-sm" style="text-decoration:none; text-align:center; background: var(--bg-4); color: var(--text); width: 100%;">👁️ View</a>
+                            <a href="/viewer.html?session=${s.id}" class="btn btn-sm" style="text-decoration:none; text-align:center; background: var(--bg-4); color: var(--text); width: 100%;">👁️ View ${s.hasPassword ? '(Password Required)' : ''}</a>
                         </div>
                     </div>
                 `,

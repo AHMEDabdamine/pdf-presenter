@@ -76,9 +76,18 @@
         </p>
 
         <!-- Session Name Input -->
-        <div class="session-name-input" style="margin-bottom: 20px;">
+        <div class="session-name-input" style="margin-bottom: 12px;">
           <label for="sessionNameInput" style="display: block; color: var(--text-2); font-size: 0.85rem; margin-bottom: 6px;">Session name</label>
           <input type="text" id="sessionNameInput" placeholder="Session XXXX" maxlength="60" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); color: var(--text); font-size: 1rem;" />
+        </div>
+
+        <!-- Session Password Input (Optional) -->
+        <div class="session-password-input" style="margin-bottom: 20px;">
+          <label for="sessionPasswordInput" style="display: block; color: var(--text-2); font-size: 0.85rem; margin-bottom: 6px;">
+            Viewer password <span style="color: var(--text-3); font-weight: normal;">(optional)</span>
+          </label>
+          <input type="password" id="sessionPasswordInput" placeholder="Leave empty for public access" maxlength="32" style="width: 100%; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--bg-1); color: var(--text); font-size: 1rem;" />
+          <span style="display: block; color: var(--text-3); font-size: 0.75rem; margin-top: 4px;">Min 4 characters. Viewers will need this password to join.</span>
         </div>
 
         <!-- Start Session Button -->

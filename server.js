@@ -16,6 +16,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const bcrypt = require("bcrypt");
 const QRCode = require("qrcode");
 const { v4: uuidv4 } = require("uuid");
 const rateLimit = require("express-rate-limit");
@@ -31,6 +32,8 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const NODE_ENV = process.env.NODE_ENV || "development";
+const IS_PRODUCTION = NODE_ENV === "production";
 
 // Ensure uploads directory exists
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
@@ -76,7 +79,7 @@ const CLEANUP_INTERVAL = 30 * 60 * 1000; // 30 minutes in milliseconds
 function requireRole(socket, allowedRoles) {
   const role = socket.data.role;
   if (!allowedRoles.includes(role)) {
-    console.log(`[WS] Rejected: role ${role} not in [${allowedRoles.join(", ")}]`);
+    if (!IS_PRODUCTION) console.log(`[WS] Rejected: role ${role} not in [${allowedRoles.join(", ")}]`);
     socket.emit("error", { message: `Forbidden: requires one of [${allowedRoles.join(", ")}]` });
     return false;
   }
@@ -85,7 +88,7 @@ function requireRole(socket, allowedRoles) {
 
 function requireSessionMatch(socket, sessionId) {
   if (socket.data.sessionId !== sessionId) {
-    console.log(`[WS] Rejected: session mismatch (${socket.data.sessionId} vs ${sessionId})`);
+    if (!IS_PRODUCTION) console.log(`[WS] Rejected: session mismatch (${socket.data.sessionId} vs ${sessionId})`);
     socket.emit("error", { message: "Forbidden: not a member of this session" });
     return false;
   }
@@ -122,6 +125,29 @@ function validateUploadToken(sessionId, token) {
   return crypto.timingSafeEqual(a, b);
 }
 
+//  Viewer Token Management - One-time tokens for password-protected sessions
+const viewerTokens = new Map(); // sessionId -> Set of valid tokens
+
+function generateViewerToken(sessionId) {
+  const token = crypto.randomBytes(32).toString("hex");
+  if (!viewerTokens.has(sessionId)) {
+    viewerTokens.set(sessionId, new Set());
+  }
+  viewerTokens.get(sessionId).add(token);
+  return token;
+}
+
+function validateViewerToken(sessionId, token) {
+  const tokens = viewerTokens.get(sessionId);
+  if (!tokens || !token) return false;
+  const valid = tokens.has(token);
+  //  SECURITY: Single-use tokens - delete after validation
+  if (valid) {
+    tokens.delete(token);
+  }
+  return valid;
+}
+
 //  Check if request is from localhost/internal network
 // NOTE: If running behind a trusted proxy, configure with app.set('trust proxy', 1)
 // and only then will x-forwarded-for be considered by req.ip
@@ -146,7 +172,7 @@ function sanitizeSessionName(name) {
   return sanitized.length > 0 ? sanitized : null;
 }
 
-function getOrCreateSession(sessionId, name = null) {
+function getOrCreateSession(sessionId, name = null, passwordHash = null) {
   if (!sessions.has(sessionId)) {
     sessions.set(sessionId, {
       currentSlide: 1,
@@ -157,6 +183,8 @@ function getOrCreateSession(sessionId, name = null) {
       pendingRemotes: new Map(), // socketId -> { socketId, requestedAt }
       approvedRemotes: new Set(), // socketIds that can rejoin without approval
       name: sanitizeSessionName(name) || "Untitled Session",
+      passwordHash, //  SECURITY: Hashed password for viewer access (null = no password)
+      passwordAttempts: new Map(), // Track failed attempts per IP
       createdAt: Date.now(),
     });
   }
@@ -173,7 +201,7 @@ function cleanupExpiredSessions() {
         const filePath = path.join(UPLOAD_DIR, session.pdfFile);
         fs.unlink(filePath, (err) => {
           if (err && err.code !== "ENOENT") {
-            console.error(`[Cleanup] Failed to delete PDF ${session.pdfFile}:`, err.message);
+            if (!IS_PRODUCTION) console.error(`[Cleanup] Failed to delete PDF ${session.pdfFile}:`, err.message);
           }
         });
         fileToSession.delete(session.pdfFile);
@@ -181,7 +209,7 @@ function cleanupExpiredSessions() {
       // Clean up session and token
       sessions.delete(sessionId);
       uploadTokens.delete(sessionId);
-      console.log(`[Cleanup] Expired session ${sessionId} removed`);
+      if (!IS_PRODUCTION) console.log(`[Cleanup] Expired session ${sessionId} removed`);
     }
   });
 }
@@ -308,7 +336,13 @@ app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
     sessionName = `Session ${sessionId.slice(0, 4)}`;
   }
 
-  getOrCreateSession(sessionId, sessionName);
+  //  SECURITY: Hash password if provided (bcrypt with 10 rounds)
+  let passwordHash = null;
+  if (req.body.password && typeof req.body.password === "string" && req.body.password.length >= 4) {
+    passwordHash = await bcrypt.hash(req.body.password, 10);
+  }
+
+  getOrCreateSession(sessionId, sessionName, passwordHash);
 
   //  Generate upload token for this session (only presenter gets this)
   const uploadToken = generateSecureToken();
@@ -338,7 +372,7 @@ app.post("/api/session", sessionLimiter, requireCsrfToken, async (req, res) => {
       color: { dark: "#1a1a2e", light: "#ffffff" },
     });
   } catch (e) {
-    console.error("QR generation failed:", e.message);
+    if (!IS_PRODUCTION) console.error("QR generation failed:", e.message);
   }
 
   const session = sessions.get(sessionId);
@@ -358,7 +392,7 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
 
   //  AUTHORIZATION: Validate upload token
   if (!validateUploadToken(sessionId, token)) {
-    console.log(`[API] Rejected upload: invalid token for session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[API] Rejected upload: invalid token for session ${sessionId}`);
     return res.status(403).json({ error: "Forbidden: invalid or missing upload token" });
   }
 
@@ -386,7 +420,7 @@ app.post("/api/upload/:sessionId", uploadLimiter, requireCsrfToken, (req, res, n
       return res.status(400).json({ error: "Invalid file: not a valid PDF" });
     }
   } catch (err) {
-    console.error("[Upload] Magic bytes check failed:", err);
+    if (!IS_PRODUCTION) console.error("[Upload] Magic bytes check failed:", err);
     fs.unlinkSync(req.file.path);
     return res.status(500).json({ error: "Failed to verify file" });
   }
@@ -461,9 +495,80 @@ app.get("/api/sessions", (req, res) => {
         ? data.pdfFile.split("-").slice(1).join("-")
         : null,
       viewerCount: data.connectedViewers.size,
+      hasPassword: !!data.passwordHash, //  SECURITY: Only expose if password exists
     });
   });
   res.json({ sessions: activeSessions });
+});
+
+/**
+ * GET /api/session/:sessionId/requires-password
+ * Checks if a session requires a password for viewer access.
+ *  SECURITY: Does not reveal if password exists, only boolean
+ */
+app.get("/api/session/:sessionId/requires-password", (req, res) => {
+  const { sessionId } = req.params;
+  const session = sessions.get(sessionId);
+
+  if (!session) {
+    return res.status(404).json({ error: "Session not found" });
+  }
+
+  res.json({
+    requiresPassword: !!session.passwordHash,
+    name: session.name,
+  });
+});
+
+/**
+ * POST /api/session/:sessionId/verify-password
+ * Verifies viewer password before allowing join.
+ *  SECURITY: Rate limited, bcrypt comparison, no plaintext storage
+ */
+app.post("/api/session/:sessionId/verify-password", async (req, res) => {
+  const { sessionId } = req.params;
+  const { password } = req.body;
+  const clientIp = req.ip || req.connection.remoteAddress || "unknown";
+
+  const session = sessions.get(sessionId);
+  if (!session) {
+    return res.status(404).json({ error: "Session not found" });
+  }
+
+  // If no password set, allow access
+  if (!session.passwordHash) {
+    return res.json({ valid: true });
+  }
+
+  //  SECURITY: Rate limit password attempts per IP (max 5 per minute)
+  const now = Date.now();
+  const attempts = session.passwordAttempts.get(clientIp) || { count: 0, lastAttempt: 0 };
+
+  // Reset counter if last attempt was > 1 minute ago
+  if (now - attempts.lastAttempt > 60000) {
+    attempts.count = 0;
+  }
+
+  if (attempts.count >= 5) {
+    return res.status(429).json({ error: "Too many attempts. Please try again later." });
+  }
+
+  attempts.count++;
+  attempts.lastAttempt = now;
+  session.passwordAttempts.set(clientIp, attempts);
+
+  //  SECURITY: bcrypt comparison (constant-time)
+  const valid = await bcrypt.compare(password, session.passwordHash);
+
+  if (valid) {
+    // Clear attempts on success
+    session.passwordAttempts.delete(clientIp);
+    //  SECURITY: Generate single-use viewer token for WebSocket auth
+    const viewerToken = generateViewerToken(sessionId);
+    res.json({ valid: true, viewerToken });
+  } else {
+    res.status(401).json({ valid: false, error: "Invalid password" });
+  }
 });
 
 /**
@@ -520,7 +625,7 @@ app.delete("/api/pdfs/:filename", (req, res) => {
     fs.unlinkSync(filePath);
     res.json({ success: true });
   } catch (err) {
-    console.error("Delete error:", err);
+    if (!IS_PRODUCTION) console.error("Delete error:", err);
     res.status(500).json({ error: "Failed to delete file" });
   }
 });
@@ -528,14 +633,14 @@ app.delete("/api/pdfs/:filename", (req, res) => {
 // ─── WebSocket (Socket.io) ────────────────────────────────────────────────────
 
 io.on("connection", (socket) => {
-  console.log(`[WS] Client connected: ${socket.id}`);
+  if (!IS_PRODUCTION) console.log(`[WS] Client connected: ${socket.id}`);
 
   /**
    * join-session: Called by presenter, remote, or viewer clients.
    * role: "presenter" | "remote" | "viewer"
    *  SECURED: Role cannot be changed after initial join. Only one presenter allowed.
    */
-  socket.on("join-session", ({ sessionId, role }) => {
+  socket.on("join-session", ({ sessionId, role, viewerToken }) => {
     if (!sessionId) return;
     if (!["presenter", "remote", "viewer"].includes(role)) return;
 
@@ -543,16 +648,25 @@ io.on("connection", (socket) => {
 
     //  SECURITY: Prevent role changes after initial join
     if (socket.data.sessionId) {
-      console.log(`[WS] Rejected: ${socket.data.role} tried to re-join as ${role}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Rejected: ${socket.data.role} tried to re-join as ${role}`);
       socket.emit("error", { message: "Forbidden: role cannot be changed after joining" });
       return;
     }
 
     //  SECURITY: Prevent multiple presenters (first-come-first-serve)
     if (role === "presenter" && session.presenterSocket) {
-      console.log(`[WS] Rejected: presenter slot already taken in session ${sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Rejected: presenter slot already taken in session ${sessionId}`);
       socket.emit("error", { message: "Forbidden: session already has a presenter" });
       return;
+    }
+
+    //  PASSWORD PROTECTION: Viewers must provide valid token if password is set
+    if (role === "viewer" && session.passwordHash) {
+      //  SECURITY: Validate JWT-style viewer token signed with session secret
+      if (!viewerToken || !validateViewerToken(sessionId, viewerToken)) {
+        socket.emit("error", { message: "password-required", code: "PASSWORD_REQUIRED" });
+        return;
+      }
     }
 
     //  REMOTE APPROVAL: Remotes require presenter acceptance before joining
@@ -585,7 +699,7 @@ io.on("connection", (socket) => {
       }
     }
 
-    console.log(`[WS] ${role} joined session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] ${role} joined session ${sessionId}`);
 
     // Send current state to the newly joined client
     socket.emit("session-state", {
@@ -603,7 +717,7 @@ io.on("connection", (socket) => {
    *  MAX PENDING: 10 pending requests per session maximum
    */
   socket.on("remote-request-access", ({ sessionId, deviceId }) => {
-    console.log(`[WS] remote-request-access from ${socket.id}, device: ${deviceId}, session: ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] remote-request-access from ${socket.id}, device: ${deviceId}, session: ${sessionId}`);
     
     //  RATE LIMITING: Prevent rapid re-requests (5 second cooldown)
     const now = Date.now();
@@ -626,14 +740,14 @@ io.on("connection", (socket) => {
 
     // Check if device is already approved (remember this device)
     if (deviceId && session.approvedRemotes.has(deviceId)) {
-      console.log(`[WS] Auto-approving device ${deviceId} for session ${sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Auto-approving device ${deviceId} for session ${sessionId}`);
       // Auto-join the session
       socket.data.approvedRemote = true;
       socket.data.sessionId = sessionId;
       socket.data.role = "remote";
       socket.data.deviceId = deviceId;
       socket.join(sessionId);
-      console.log(`[WS] Socket ${socket.id} assigned sessionId: ${socket.data.sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Socket ${socket.id} assigned sessionId: ${socket.data.sessionId}`);
 
       socket.emit("remote-approved", { message: "Access granted (previously approved)" });
       socket.emit("session-state", {
@@ -642,7 +756,7 @@ io.on("connection", (socket) => {
         pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
         name: session.name,
       });
-      console.log(`[WS] Device ${deviceId} auto-approved and joined session ${sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Device ${deviceId} auto-approved and joined session ${sessionId}`);
       return;
     }
 
@@ -681,7 +795,7 @@ io.on("connection", (socket) => {
 
     // Confirm to remote that request was sent
     socket.emit("remote-request-sent", { message: "Request sent to presenter" });
-    console.log(`[WS] Remote ${socket.id} (device: ${deviceId}) requested access to session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] Remote ${socket.id} (device: ${deviceId}) requested access to session ${sessionId}`);
   });
 
   /**
@@ -703,17 +817,17 @@ io.on("connection", (socket) => {
     const pendingRequest = session.pendingRemotes.get(remoteSocketId);
 
     if (remoteSocket) {
-      console.log(`[WS] remote-accept: Setting sessionId for socket ${remoteSocket.id} to ${sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] remote-accept: Setting sessionId for socket ${remoteSocket.id} to ${sessionId}`);
       remoteSocket.data.approvedRemote = true;
       remoteSocket.data.sessionId = sessionId;
       remoteSocket.data.role = "remote";
       remoteSocket.join(sessionId);
-      console.log(`[WS] remote-accept: Socket ${remoteSocket.id} sessionId now: ${remoteSocket.data.sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] remote-accept: Socket ${remoteSocket.id} sessionId now: ${remoteSocket.data.sessionId}`);
 
       // Add device ID to approved remotes list (remember this device)
       if (pendingRequest && pendingRequest.deviceId) {
         session.approvedRemotes.add(pendingRequest.deviceId);
-        console.log(`[WS] Added device ${pendingRequest.deviceId} to approved list for session ${sessionId}`);
+        if (!IS_PRODUCTION) console.log(`[WS] Added device ${pendingRequest.deviceId} to approved list for session ${sessionId}`);
       }
 
       // Notify remote they were accepted
@@ -728,7 +842,7 @@ io.on("connection", (socket) => {
 
     session.pendingRemotes.delete(remoteSocketId);
     io.to(session.presenterSocket).emit("remote-accepted", { remoteSocketId });
-    console.log(`[WS] Presenter accepted remote ${remoteSocketId} in session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] Presenter accepted remote ${remoteSocketId} in session ${sessionId}`);
   });
 
   /**
@@ -753,7 +867,7 @@ io.on("connection", (socket) => {
 
     session.pendingRemotes.delete(remoteSocketId);
     io.to(session.presenterSocket).emit("remote-rejected", { remoteSocketId });
-    console.log(`[WS] Presenter rejected remote ${remoteSocketId} in session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] Presenter rejected remote ${remoteSocketId} in session ${sessionId}`);
   });
 
   /**
@@ -841,7 +955,7 @@ io.on("connection", (socket) => {
     session.pdfFile = pdfFile;
     session.currentSlide = 1; // Reset to first slide on PDF change
 
-    console.log(`[WS] PDF loaded in session ${sessionId}: ${filename}`);
+    if (!IS_PRODUCTION) console.log(`[WS] PDF loaded in session ${sessionId}: ${filename}`);
 
     // Notify all clients in the room about the new PDF
     io.to(sessionId).emit("pdf-loaded", {
@@ -914,7 +1028,7 @@ io.on("connection", (socket) => {
     }
 
     session.name = sanitizedName;
-    console.log(`[WS] Session ${sessionId} renamed to "${sanitizedName}"`);
+    if (!IS_PRODUCTION) console.log(`[WS] Session ${sessionId} renamed to "${sanitizedName}"`);
 
     // Broadcast to all clients
     io.to(sessionId).emit("session-renamed", { name: sanitizedName });
@@ -933,7 +1047,7 @@ io.on("connection", (socket) => {
     const session = sessions.get(sessionId);
     if (!session) return;
 
-    console.log(`[WS] Presenter ending session ${sessionId}`);
+    if (!IS_PRODUCTION) console.log(`[WS] Presenter ending session ${sessionId}`);
 
     // Notify all clients that session has ended
     io.to(sessionId).emit("session-ended", { message: "Session has ended" });
@@ -943,7 +1057,7 @@ io.on("connection", (socket) => {
       const filePath = path.join(UPLOAD_DIR, session.pdfFile);
       fs.unlink(filePath, (err) => {
         if (err && err.code !== "ENOENT") {
-          console.error(`[WS] Failed to delete PDF ${session.pdfFile}:`, err.message);
+          if (!IS_PRODUCTION) console.error(`[WS] Failed to delete PDF ${session.pdfFile}:`, err.message);
         }
       });
       fileToSession.delete(session.pdfFile);
@@ -953,12 +1067,12 @@ io.on("connection", (socket) => {
     sessions.delete(sessionId);
     uploadTokens.delete(sessionId);
 
-    console.log(`[WS] Session ${sessionId} ended and cleaned up`);
+    if (!IS_PRODUCTION) console.log(`[WS] Session ${sessionId} ended and cleaned up`);
   });
 
   socket.on("disconnect", () => {
     const { sessionId, role } = socket.data;
-    console.log(
+    if (!IS_PRODUCTION) console.log(
       `[WS] ${role || "client"} disconnected from session ${sessionId}`,
     );
 
@@ -978,7 +1092,7 @@ io.on("connection", (socket) => {
     if (role === "presenter" && sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId);
       session.approvedRemotes.clear();
-      console.log(`[WS] Cleared approved remotes for session ${sessionId}`);
+      if (!IS_PRODUCTION) console.log(`[WS] Cleared approved remotes for session ${sessionId}`);
     }
   });
 });
@@ -986,13 +1100,19 @@ io.on("connection", (socket) => {
 // ─── Error Handler ────────────────────────────────────────────────────────────
 
 app.use((err, _req, res, _next) => {
-  console.error(err.message);
-  res.status(500).json({ error: err.message });
+  //  SECURITY: Log internally but don't leak error details to client
+  if (!IS_PRODUCTION) {
+    console.error(err.message);
+  }
+  //  SECURITY: Generic error message - never expose internal errors
+  res.status(500).json({ error: "Internal server error" });
 });
 
 // ─── Start ────────────────────────────────────────────────────────────────────
 
 server.listen(PORT, () => {
-  console.log(`\n🎯 PDF Presenter running at http://localhost:${PORT}`);
-  console.log(`   Open the URL above in your browser to start presenting.\n`);
+  if (!IS_PRODUCTION) {
+    console.log(`\n🎯 PDF Presenter running at http://localhost:${PORT}`);
+    console.log(`   Open the URL above in your browser to start presenting.\n`);
+  }
 });

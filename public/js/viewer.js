@@ -55,6 +55,11 @@ const vsReconnecting = $("vsReconnecting");
 const vsHeader = $("vsHeader");
 const toast = $("toast");
 const remoteCursor = $("remoteCursor");
+const passwordRow = $("passwordRow");
+const passwordInput = $("passwordInput");
+const passwordBtn = $("passwordBtn");
+
+let viewerToken = null; //  SECURITY: Token for password-protected sessions
 
 // ─── Auto-connect from URL param ─────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
@@ -79,10 +84,15 @@ sessionInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") connectToSession();
 });
 
+passwordBtn.addEventListener("click", verifyPassword);
+passwordInput.addEventListener("keydown", (e) => {
+  if (e.key === "Enter") verifyPassword();
+});
+
 let socket = null;
 let reconnectInterval = null;
 
-function connectToSession() {
+async function connectToSession() {
   const id = sessionInput.value.trim().toUpperCase();
   if (!id || id.length < 4) {
     vcHint.textContent = "⚠ Enter a valid session ID";
@@ -90,11 +100,82 @@ function connectToSession() {
     return;
   }
 
-  vcHint.textContent = "Connecting...";
+  vcHint.textContent = "Checking session...";
   vcHint.style.color = "var(--text-3)";
   state.sessionId = id;
 
-  initSocket();
+  //  SECURITY: Check if session requires password
+  try {
+    const res = await fetch(`/api/session/${id}/requires-password`);
+    if (!res.ok) {
+      vcHint.textContent = "⚠ Session not found";
+      vcHint.style.color = "var(--danger)";
+      return;
+    }
+    const data = await res.json();
+
+    if (data.requiresPassword) {
+      // Show password input
+      passwordRow.style.display = "flex";
+      passwordInput.focus();
+      vcHint.textContent = "🔒 This session requires a password";
+      vcHint.style.color = "var(--warning)";
+      return; // Wait for password verification
+    }
+
+    // No password required, proceed with connection
+    initSocket();
+  } catch (err) {
+    console.error("[Viewer] Failed to check password requirement:", err);
+    vcHint.textContent = "⚠ Connection failed";
+    vcHint.style.color = "var(--danger)";
+  }
+}
+
+async function verifyPassword() {
+  const password = passwordInput.value.trim();
+  if (!password) {
+    vcHint.textContent = "⚠ Enter a password";
+    vcHint.style.color = "var(--danger)";
+    return;
+  }
+
+  vcHint.textContent = "Verifying...";
+  vcHint.style.color = "var(--text-3)";
+  passwordBtn.disabled = true;
+
+  try {
+    const res = await fetch(`/api/session/${state.sessionId}/verify-password`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-Requested-With": "XMLHttpRequest",
+      },
+      body: JSON.stringify({ password }),
+    });
+
+    const data = await res.json();
+
+    if (data.valid) {
+      //  SECURITY: Store viewer token for WebSocket auth
+      viewerToken = data.viewerToken;
+      vcHint.textContent = "✓ Access granted!";
+      vcHint.style.color = "var(--success)";
+      passwordRow.style.display = "none";
+      initSocket();
+    } else {
+      vcHint.textContent = "✗ " + (data.error || "Invalid password");
+      vcHint.style.color = "var(--danger)";
+      passwordInput.value = "";
+      passwordInput.focus();
+    }
+  } catch (err) {
+    console.error("[Viewer] Password verification failed:", err);
+    vcHint.textContent = "⚠ Verification failed";
+    vcHint.style.color = "var(--danger)";
+  } finally {
+    passwordBtn.disabled = false;
+  }
 }
 
 function initSocket() {
@@ -120,6 +201,7 @@ function initSocket() {
     socket.emit("join-session", {
       sessionId: state.sessionId,
       role: "viewer",
+      viewerToken, //  SECURITY: Include token for password-protected sessions
     });
 
     vsStatusDot.textContent = "● Live";
@@ -155,6 +237,7 @@ function initSocket() {
     socket.emit("join-session", {
       sessionId: state.sessionId,
       role: "viewer",
+      viewerToken, //  SECURITY: Include token for password-protected sessions
     });
   });
 
