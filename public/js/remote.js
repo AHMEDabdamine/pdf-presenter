@@ -51,7 +51,8 @@ let cursorEnabled = false;
 // ── Auto-connect from URL param ───────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const urlSession = params.get("session");
-if (urlSession) {
+//  SECURITY: Validate session ID format before using
+if (urlSession && /^[A-Z0-9]{8,16}$/i.test(urlSession)) {
   sessionInput.value = urlSession.toUpperCase();
   setTimeout(connectToSession, 300);
 }
@@ -294,13 +295,20 @@ let tpSpeedVal = 1.5;
 notesTeleBtn.addEventListener("click", openTeleprompter);
 tpClose.addEventListener("click", closeTeleprompter);
 
+function escapeHtml(text) {
+  const div = document.createElement("div");
+  div.textContent = text;
+  return div.innerHTML;
+}
+
 function openTeleprompter() {
   const text = notesArea.value.trim();
   if (!text) {
     showToast("⚠ Add some notes first");
     return;
   }
-  tpText.innerHTML = text
+  //  SECURITY: Escape HTML to prevent XSS in notes
+  tpText.innerHTML = escapeHtml(text)
     .split(/\n\n+/)
     .map((p) => "<p>" + p.replace(/\n/g, "<br>") + "</p>")
     .join("");

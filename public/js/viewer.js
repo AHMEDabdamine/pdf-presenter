@@ -66,7 +66,8 @@ if (urlOrientation === "portrait" || urlOrientation === "landscape") {
   document.body.classList.add(`orient-${urlOrientation}`);
 }
 
-if (urlSession) {
+//  SECURITY: Validate session ID format before using
+if (urlSession && /^[A-Z0-9]{8,16}$/i.test(urlSession)) {
   sessionInput.value = urlSession.toUpperCase();
   setTimeout(connectToSession, 300);
 }
