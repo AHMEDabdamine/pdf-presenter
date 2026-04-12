@@ -1,0 +1,17 @@
+# Nixpacks configuration for PDF Presenter
+# This configures the build environment for Railway/Docker deployments
+
+[phases.build]
+cmds = ["npm ci --only=production"]
+
+[phases.setup]
+nixPkgs = ["nodejs_20"]
+
+[start]
+cmd = "node server.js"
+
+# Mount configuration for persistent data
+# The data directory is mounted as a volume to persist likes.json
+[mounts]
+"/app/data" = { type = "volume", id = "data" }
+"/app/uploads" = { type = "volume", id = "uploads" }
