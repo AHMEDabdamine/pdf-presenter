@@ -18,8 +18,8 @@ FROM node:20-alpine AS production
 # Create app directory
 WORKDIR /app
 
-# Create uploads directory with proper permissions
-RUN mkdir -p /app/uploads && chown -R node:node /app
+# Create uploads and data directories with proper permissions
+RUN mkdir -p /app/uploads /app/data && chown -R node:node /app
 
 # Copy dependencies from builder
 COPY --from=builder /app/node_modules ./node_modules
