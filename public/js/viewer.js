@@ -300,8 +300,8 @@ function initSocket() {
 
   // ─── Session Events ───────────────────────────────────────────────────────
 
-  socket.on("session-state", ({ currentSlide, totalSlides, pdfFile, name }) => {
-    console.log("[Viewer] Session state:", { currentSlide, totalSlides, pdfFile, name });
+  socket.on("session-state", ({ currentSlide, totalSlides, pdfFile, name, viewerCount }) => {
+    console.log("[Viewer] Session state:", { currentSlide, totalSlides, pdfFile, name, viewerCount });
 
     state.currentSlide = currentSlide || 1;
     state.totalSlides = totalSlides || 0;
@@ -309,6 +309,9 @@ function initSocket() {
 
     // Update session name display
     updateSessionNameDisplay(name);
+
+    // Update viewer count
+    updateViewerCount(viewerCount || 1);
 
     showViewer();
     updateCounter();
@@ -322,6 +325,12 @@ function initSocket() {
       vsWaiting.style.display = "flex";
       vsLoading.style.display = "none";
     }
+  });
+
+  // Handle viewer count updates
+  socket.on("viewer-count", ({ count }) => {
+    console.log("[Viewer] Viewer count update:", count);
+    updateViewerCount(count);
   });
 
   socket.on("slide-update", ({ currentSlide }) => {
@@ -403,6 +412,16 @@ function updateSessionNameDisplay(name) {
   if (nameEl) {
     nameEl.textContent = name || "Untitled Session";
     nameEl.style.display = "inline";
+  }
+}
+
+// ─── Viewer Count Display ─────────────────────────────────────────────────────
+
+function updateViewerCount(count) {
+  const countEl = document.getElementById("vsViewerCount");
+  if (countEl) {
+    const text = count === 1 ? "1 viewer" : `${count} viewers`;
+    countEl.textContent = text;
   }
 }
 
@@ -829,6 +848,99 @@ document.addEventListener("fullscreenchange", () => {
     if (state.pdfDoc) renderCurrentSlide();
   }, 100);
 });
+
+// ─── Share Modal ────────────────────────────────────────────────────────────────
+
+const shareModal = $("shareModal");
+const vsShareBtn = $("vsShareBtn");
+const closeShareModal = $("closeShareModal");
+const shareQrCanvas = $("shareQrCanvas");
+const shareUrlDisplay = $("shareUrlDisplay");
+const shareModalSessionId = $("shareModalSessionId");
+const copyShareUrlBtn = $("copyShareUrlBtn");
+
+let shareQrCode = null;
+
+function showShareModal() {
+  if (!shareModal || !state.sessionId) return;
+
+  // Generate share URL (viewer URL with session ID)
+  const baseUrl = window.location.origin + window.location.pathname;
+  const shareUrl = `${baseUrl}?session=${state.sessionId}`;
+
+  // Update modal content
+  shareModalSessionId.textContent = state.sessionId;
+  shareUrlDisplay.textContent = shareUrl;
+
+  // Generate QR code
+  if (shareQrCanvas) {
+    try {
+      if (!shareQrCode) {
+        shareQrCode = new QRious({
+          element: shareQrCanvas,
+          value: shareUrl,
+          size: 200,
+          background: "#ffffff",
+          foreground: "#1a1a2e",
+        });
+      } else {
+        shareQrCode.value = shareUrl;
+      }
+    } catch (err) {
+      console.error("[Viewer] Failed to generate QR code:", err);
+    }
+  }
+
+  shareModal.style.display = "flex";
+}
+
+function hideShareModal() {
+  if (shareModal) shareModal.style.display = "none";
+}
+
+function copyShareUrl() {
+  const baseUrl = window.location.origin + window.location.pathname;
+  const shareUrl = `${baseUrl}?session=${state.sessionId}`;
+
+  if (navigator.clipboard) {
+    navigator.clipboard
+      .writeText(shareUrl)
+      .then(() => showToast("Link copied to clipboard!", "success"))
+      .catch(() => showToast("Failed to copy link", "error"));
+  } else {
+    // Fallback
+    const textarea = document.createElement("textarea");
+    textarea.value = shareUrl;
+    document.body.appendChild(textarea);
+    textarea.select();
+    try {
+      document.execCommand("copy");
+      showToast("Link copied to clipboard!", "success");
+    } catch (err) {
+      showToast("Failed to copy link", "error");
+    }
+    document.body.removeChild(textarea);
+  }
+}
+
+// Event listeners
+if (vsShareBtn) {
+  vsShareBtn.addEventListener("click", showShareModal);
+}
+
+if (closeShareModal) {
+  closeShareModal.addEventListener("click", hideShareModal);
+}
+
+if (shareModal) {
+  shareModal.addEventListener("click", (e) => {
+    if (e.target === shareModal) hideShareModal();
+  });
+}
+
+if (copyShareUrlBtn) {
+  copyShareUrlBtn.addEventListener("click", copyShareUrl);
+}
 
 // ─── Dhikr Toast Notifications ────────────────────────────────────────────────
 

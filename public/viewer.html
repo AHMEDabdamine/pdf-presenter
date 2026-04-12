@@ -18,6 +18,8 @@
     <link rel="manifest" href="/favicon/site.webmanifest">
     <!-- PDF.js (local) -->
     <script src="/vendor/pdf.min.js"></script>
+    <!-- QRious for QR codes -->
+    <script src="/vendor/qrious.min.js"></script>
     <!-- Socket.io -->
     <script src="/socket.io/socket.io.js"></script>
   </head>
@@ -62,7 +64,11 @@
       <div class="vs-header" id="vsHeader">
         <span class="vs-session-name" id="vsSessionName" style="font-weight: 600; color: var(--accent); margin-right: 12px; display: none;">Untitled Session</span>
         <span class="vs-session-badge" id="vsSessionBadge">—</span>
+        <span class="vs-viewer-count" id="vsViewerCount" title="Viewers connected">1 viewer</span>
         <span class="vs-status connected" id="vsStatusDot">Live</span>
+        <button class="vs-share-btn" id="vsShareBtn" title="Share session">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+        </button>
         <button class="vs-fullscreen-btn" id="vsFullscreenBtn" title="Fullscreen">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
         </button>
@@ -103,6 +109,31 @@
       <div class="vs-reconnecting" id="vsReconnecting" style="display: none">
         <div class="vs-spinner"></div>
         <span>Reconnecting...</span>
+      </div>
+    </div>
+
+    <!-- ── Share Modal ─────────────────────────────────────────────── -->
+    <div class="modal-backdrop" id="shareModal" style="display: none">
+      <div class="modal-card">
+        <button class="modal-close" id="closeShareModal">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
+        </button>
+        <h2>Share Session</h2>
+        <p class="modal-subtitle">Invite friends to view this presentation</p>
+
+        <div class="qr-single" style="margin: 20px 0;">
+          <canvas id="shareQrCanvas"></canvas>
+          <p class="qr-desc">Scan to join as viewer</p>
+        </div>
+        <p class="remote-url" id="shareUrlDisplay">—</p>
+
+        <div class="remote-stats" style="margin: 12px 0;">
+          <span>Session: <strong id="shareModalSessionId">—</strong></span>
+        </div>
+        <button class="btn btn-secondary" id="copyShareUrlBtn">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>
+          Copy Link
+        </button>
       </div>
     </div>
 

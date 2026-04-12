@@ -842,12 +842,10 @@ io.on("connection", (socket) => {
       session.presenterSocket = socket.id;
     } else if (role === "viewer") {
       session.connectedViewers.add(socket.id);
-      // Notify presenter of viewer count change
-      if (session.presenterSocket) {
-        io.to(session.presenterSocket).emit("viewer-count", {
-          count: session.connectedViewers.size,
-        });
-      }
+      // Broadcast viewer count to all session members
+      io.to(sessionId).emit("viewer-count", {
+        count: session.connectedViewers.size,
+      });
     }
 
     if (!IS_PRODUCTION) console.log(`[WS] ${role} joined session ${sessionId}`);
@@ -858,6 +856,7 @@ io.on("connection", (socket) => {
       totalSlides: session.totalSlides,
       pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
       name: session.name,
+      viewerCount: session.connectedViewers.size,
     });
   });
 
@@ -1292,12 +1291,10 @@ io.on("connection", (socket) => {
     if (role === "viewer" && sessionId && sessions.has(sessionId)) {
       const session = sessions.get(sessionId);
       session.connectedViewers.delete(socket.id);
-      // Notify presenter of viewer count change
-      if (session.presenterSocket) {
-        io.to(session.presenterSocket).emit("viewer-count", {
-          count: session.connectedViewers.size,
-        });
-      }
+      // Broadcast viewer count to all session members
+      io.to(sessionId).emit("viewer-count", {
+        count: session.connectedViewers.size,
+      });
     }
 
     // Clear approved remotes when presenter disconnects (session reset)

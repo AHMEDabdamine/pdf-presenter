@@ -33,7 +33,6 @@ const tpClose = $("tpClose");
 const tpText = $("tpText");
 const tpTextWrap = $("tpTextWrap");
 const tpPlayPause = $("tpPlayPause");
-const tpSpeed = $("tpSpeed");
 const rcFsOverlay = $("rcFsOverlay");
 const rfsCounter = $("rfsCounter");
 const rfsPrev = $("rfsPrev");
@@ -268,6 +267,8 @@ function updateSlideDisplay() {
   rcTotalSlides.textContent = ts;
   rfsCounter.textContent = currentSlide + " / " + ts;
   if (jumpInput) jumpInput.max = totalSlides || 999;
+  // Update teleprompter slide indicator too
+  updateTpSlideIndicator();
 }
 
 function animateSlideChange() {
@@ -353,22 +354,30 @@ tpPlayPause.addEventListener("click", () => {
 });
 
 const tpSpeedValue = $("tpSpeedValue");
+const tpSpeedUp = $("tpSpeedUp");
+const tpSpeedDown = $("tpSpeedDown");
 const tpPrevSlide = $("tpPrevSlide");
 const tpNextSlide = $("tpNextSlide");
 const tpSlideIndicator = $("tpSlideIndicator");
 
-tpSpeed.addEventListener("input", () => {
-  tpSpeedVal = parseFloat(tpSpeed.value);
+// Speed button controls (0.1 increments, min 0.1 to allow very slow scrolling)
+tpSpeedUp?.addEventListener("click", () => {
+  tpSpeedVal = Math.min(8, tpSpeedVal + 0.1);
+  if (tpSpeedValue) tpSpeedValue.textContent = tpSpeedVal.toFixed(1);
+});
+
+tpSpeedDown?.addEventListener("click", () => {
+  tpSpeedVal = Math.max(0.1, tpSpeedVal - 0.1);
   if (tpSpeedValue) tpSpeedValue.textContent = tpSpeedVal.toFixed(1);
 });
 
 // Slide controls for teleprompter
 tpPrevSlide?.addEventListener("click", () => {
-  sendPrevSlide();
+  sendSlideChange("prev");
 });
 
 tpNextSlide?.addEventListener("click", () => {
-  sendNextSlide();
+  sendSlideChange("next");
 });
 
 // Update slide indicator when slide changes

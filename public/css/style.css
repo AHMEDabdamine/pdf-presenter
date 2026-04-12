@@ -414,7 +414,42 @@ button {
   transition: all 0.2s ease;
 }
 
-.footer-like-btn:hover {
+.vs-fullscreen-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.vs-fullscreen-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.vs-share-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--text-2);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  margin-left: 8px;
+}
+
+.vs-share-btn:hover {
   border-color: var(--accent);
   color: var(--accent);
 }
@@ -1434,14 +1469,35 @@ button {
 .tp-speed-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 4px;
   font-size: 0.78rem;
   color: rgba(255, 255, 255, 0.5);
 }
 
-.tp-speed-row input[type="range"] {
-  width: 80px;
-  accent-color: var(--accent);
+.tp-speed-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.tp-speed-btn:hover {
+  background: rgba(255, 255, 255, 0.2);
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+.tp-speed-btn:active {
+  background: rgba(255, 255, 255, 0.3);
+  transform: scale(0.95);
 }
 
 .tp-text-wrap {
@@ -1489,10 +1545,12 @@ button {
 }
 
 .tp-speed-value {
-  font-size: 0.75rem;
-  color: rgba(255, 255, 255, 0.7);
-  min-width: 32px;
-  text-align: right;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: #fff;
+  min-width: 36px;
+  text-align: center;
+  padding: 0 4px;
 }
 
 /* ── Teleprompter Slide Controls ────────────────────────── */
@@ -2055,6 +2113,16 @@ button {
   background: var(--bg-3);
   padding: 4px 10px;
   border-radius: var(--radius-sm);
+}
+
+.vs-viewer-count {
+  font-size: 0.75rem;
+  color: var(--text-3);
+  background: var(--bg-2);
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  margin-left: 8px;
+  border: 1px solid var(--border);
 }
 
 .vs-status {
