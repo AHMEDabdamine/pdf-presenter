@@ -72,7 +72,8 @@ sessionInput.addEventListener("keydown", (e) => {
 function connectToSession() {
   const id = sessionInput.value.trim().toUpperCase();
   if (!id || id.length < 4) {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Enter a valid session ID';
+    rcHint.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg> Enter a valid session ID';
     rcHint.style.color = "var(--danger)";
     return;
   }
@@ -84,25 +85,33 @@ function connectToSession() {
 
   socket.on("connect", () => {
     // 🔒 Request access first - presenter must approve
-    socket.emit("remote-request-access", { sessionId, deviceId: getDeviceId() });
+    socket.emit("remote-request-access", {
+      sessionId,
+      deviceId: getDeviceId(),
+    });
   });
 
   // Waiting for presenter approval
   socket.on("remote-request-sent", ({ message }) => {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Waiting for presenter approval...';
+    rcHint.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg> Waiting for presenter approval...';
     rcHint.style.color = "var(--warning)";
   });
 
   // Access granted - server already joined us
   socket.on("remote-approved", ({ message }) => {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> ' + escapeHtml(message);
+    rcHint.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> ' +
+      escapeHtml(message);
     rcHint.style.color = "var(--success)";
     // Server already joined the session, no need to emit join-session
   });
 
   // Access denied
   socket.on("remote-rejected", ({ message }) => {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> ' + escapeHtml(message);
+    rcHint.innerHTML =
+      '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> ' +
+      escapeHtml(message);
     rcHint.style.color = "var(--danger)";
     setTimeout(() => disconnect(), 2000);
   });
@@ -140,7 +149,10 @@ function connectToSession() {
     setStatus(true);
     // Re-request access on reconnect if not already approved
     if (!socket.data?.approvedRemote) {
-      socket.emit("remote-request-access", { sessionId, deviceId: getDeviceId() });
+      socket.emit("remote-request-access", {
+        sessionId,
+        deviceId: getDeviceId(),
+      });
     }
   });
 
@@ -151,7 +163,7 @@ function connectToSession() {
 
   // Session ended - show message and redirect
   socket.on("session-ended", ({ message }) => {
-    showToast(message, 'warning');
+    showToast(message, "warning");
     setTimeout(() => {
       window.location.href = "/access.html";
     }, 3000);
@@ -196,7 +208,9 @@ function showPad() {
 }
 
 function setStatus(online) {
-  rcStatusDot.innerHTML = online ? '<span class="status-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px;"></span>Live' : '<span class="status-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px;"></span>Disconnected';
+  rcStatusDot.innerHTML = online
+    ? '<span class="status-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px;"></span>Live'
+    : '<span class="status-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px;"></span>Disconnected';
   rcStatusDot.className =
     "rc-status " + (online ? "connected" : "disconnected");
 }
@@ -458,21 +472,28 @@ let cursorTimeout = null;
 function throttledCursorMove(x, y, active) {
   const now = Date.now();
   pendingCursorPos = { x, y, active };
-  
+
   if (now - lastCursorSend >= CURSOR_THROTTLE_MS) {
     sendCursorMove(x, y, active);
     lastCursorSend = now;
     pendingCursorPos = null;
   } else if (!cursorTimeout) {
     // Schedule send if not already scheduled
-    cursorTimeout = setTimeout(() => {
-      if (pendingCursorPos) {
-        sendCursorMove(pendingCursorPos.x, pendingCursorPos.y, pendingCursorPos.active);
-        lastCursorSend = Date.now();
-        pendingCursorPos = null;
-      }
-      cursorTimeout = null;
-    }, CURSOR_THROTTLE_MS - (now - lastCursorSend));
+    cursorTimeout = setTimeout(
+      () => {
+        if (pendingCursorPos) {
+          sendCursorMove(
+            pendingCursorPos.x,
+            pendingCursorPos.y,
+            pendingCursorPos.active,
+          );
+          lastCursorSend = Date.now();
+          pendingCursorPos = null;
+        }
+        cursorTimeout = null;
+      },
+      CURSOR_THROTTLE_MS - (now - lastCursorSend),
+    );
   }
 }
 
@@ -487,7 +508,9 @@ function getDeviceId() {
       // Generate a random hex string as fallback
       const array = new Uint8Array(16);
       crypto.getRandomValues(array);
-      deviceId = Array.from(array, byte => byte.toString(16).padStart(2, '0')).join('');
+      deviceId = Array.from(array, (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join("");
     }
     localStorage.setItem("pdf-presenter-device-id", deviceId);
   }
