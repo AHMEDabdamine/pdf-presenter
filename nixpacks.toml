@@ -2,7 +2,9 @@
 # This configures the build environment for Railway/Docker deployments
 
 [phases.build]
-cmds = ["npm ci --only=production"]
+cmds = ["npm install --omit=dev"]
+# Disable cache to avoid EBUSY errors with node_modules/.cache
+cache = false
 
 [phases.setup]
 nixPkgs = ["nodejs_20"]

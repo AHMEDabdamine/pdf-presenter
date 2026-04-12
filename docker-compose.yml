@@ -12,9 +12,7 @@ services:
       # Optional: Set custom session TTL (in hours)
       # - SESSION_TTL=4
     volumes:
-      # Persist uploads between container restarts
       - ./uploads:/app/uploads
-      # Persist likes count between container rebuilds
       - ./data:/app/data
     restart: unless-stopped
     healthcheck:
