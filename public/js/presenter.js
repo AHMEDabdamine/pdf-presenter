@@ -1151,6 +1151,26 @@ $("ipSelector").addEventListener("change", (e) => {
 
 $("copyUrlBtn").addEventListener("click", () => {
   if (!state.remoteUrl) return;
+  
+  // Check if clipboard API is available (requires secure context - HTTPS)
+  if (!navigator.clipboard || !navigator.clipboard.writeText) {
+    // Fallback for HTTP/non-secure contexts - copy manually
+    const textArea = document.createElement("textarea");
+    textArea.value = state.remoteUrl;
+    textArea.style.position = "fixed";
+    textArea.style.left = "-9999px";
+    document.body.appendChild(textArea);
+    textArea.select();
+    try {
+      document.execCommand("copy");
+      showToast("✓ Link copied to clipboard");
+    } catch (err) {
+      showToast("⚠ Copy failed — select the URL manually");
+    }
+    document.body.removeChild(textArea);
+    return;
+  }
+  
   navigator.clipboard
     .writeText(state.remoteUrl)
     .then(() => showToast("✓ Link copied to clipboard"))
