@@ -48,6 +48,11 @@ let notesFontSize = 16;
 let cursorActive = false;
 let cursorEnabled = false;
 
+// Cursor throttle settings
+const CURSOR_THROTTLE_MS = 16; // ~60fps
+let lastCursorSend = 0;
+let pendingCursorPos = null;
+
 // ── Auto-connect from URL param ───────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const urlSession = params.get("session");
@@ -90,14 +95,14 @@ function connectToSession() {
 
   // Access granted - server already joined us
   socket.on("remote-approved", ({ message }) => {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> ' + message;
+    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> ' + escapeHtml(message);
     rcHint.style.color = "var(--success)";
     // Server already joined the session, no need to emit join-session
   });
 
   // Access denied
   socket.on("remote-rejected", ({ message }) => {
-    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> ' + message;
+    rcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> ' + escapeHtml(message);
     rcHint.style.color = "var(--danger)";
     setTimeout(() => disconnect(), 2000);
   });
@@ -333,9 +338,31 @@ tpPlayPause.addEventListener("click", () => {
   else stopTpScroll();
 });
 
+const tpSpeedValue = $("tpSpeedValue");
+const tpPrevSlide = $("tpPrevSlide");
+const tpNextSlide = $("tpNextSlide");
+const tpSlideIndicator = $("tpSlideIndicator");
+
 tpSpeed.addEventListener("input", () => {
   tpSpeedVal = parseFloat(tpSpeed.value);
+  if (tpSpeedValue) tpSpeedValue.textContent = tpSpeedVal.toFixed(1);
 });
+
+// Slide controls for teleprompter
+tpPrevSlide?.addEventListener("click", () => {
+  sendPrevSlide();
+});
+
+tpNextSlide?.addEventListener("click", () => {
+  sendNextSlide();
+});
+
+// Update slide indicator when slide changes
+function updateTpSlideIndicator() {
+  if (tpSlideIndicator) {
+    tpSlideIndicator.textContent = `${currentSlide} / ${totalSlides}`;
+  }
+}
 
 function startTpScroll() {
   stopTpScroll();
@@ -426,6 +453,29 @@ function sendCursorMove(x, y, active) {
   }
 }
 
+let cursorTimeout = null;
+
+function throttledCursorMove(x, y, active) {
+  const now = Date.now();
+  pendingCursorPos = { x, y, active };
+  
+  if (now - lastCursorSend >= CURSOR_THROTTLE_MS) {
+    sendCursorMove(x, y, active);
+    lastCursorSend = now;
+    pendingCursorPos = null;
+  } else if (!cursorTimeout) {
+    // Schedule send if not already scheduled
+    cursorTimeout = setTimeout(() => {
+      if (pendingCursorPos) {
+        sendCursorMove(pendingCursorPos.x, pendingCursorPos.y, pendingCursorPos.active);
+        lastCursorSend = Date.now();
+        pendingCursorPos = null;
+      }
+      cursorTimeout = null;
+    }, CURSOR_THROTTLE_MS - (now - lastCursorSend));
+  }
+}
+
 // Generate or retrieve persistent device ID
 function getDeviceId() {
   let deviceId = localStorage.getItem("pdf-presenter-device-id");
@@ -457,8 +507,8 @@ function handleCursorInteraction(e) {
   const normalizedX = Math.max(0, Math.min(1, x));
   const normalizedY = Math.max(0, Math.min(1, y));
 
-  // Immediate send for maximum responsiveness
-  sendCursorMove(normalizedX, normalizedY, true);
+  // Throttled send for smooth performance
+  throttledCursorMove(normalizedX, normalizedY, true);
 }
 
 function handleCursorEnd() {

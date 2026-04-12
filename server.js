@@ -33,11 +33,38 @@ const io = new Server(server, {
 
 const PORT = process.env.PORT || 3000;
 const UPLOAD_DIR = path.join(__dirname, "uploads");
+const DATA_DIR = path.join(__dirname, "data");
+const LIKES_FILE = path.join(DATA_DIR, "likes.json");
 const NODE_ENV = process.env.NODE_ENV || "development";
 const IS_PRODUCTION = NODE_ENV === "production";
 
-// Ensure uploads directory exists
+// Ensure uploads and data directories exist
 if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+// ─── Like Counter Helpers ───────────────────────────────────────────────────
+
+function getLikesData() {
+  try {
+    if (fs.existsSync(LIKES_FILE)) {
+      const data = fs.readFileSync(LIKES_FILE, "utf8");
+      return JSON.parse(data);
+    }
+  } catch (err) {
+    if (!IS_PRODUCTION) console.error("[Likes] Error reading likes file:", err);
+  }
+  return { count: 0, likedDevices: [] };
+}
+
+function saveLikesData(data) {
+  try {
+    fs.writeFileSync(LIKES_FILE, JSON.stringify(data, null, 2));
+    return true;
+  } catch (err) {
+    if (!IS_PRODUCTION) console.error("[Likes] Error writing likes file:", err);
+    return false;
+  }
+}
 
 // ─── File Upload (Multer) ─────────────────────────────────────────────────────
 
@@ -665,6 +692,92 @@ app.delete("/api/pdfs/:filename", (req, res) => {
   } catch (err) {
     if (!IS_PRODUCTION) console.error("Delete error:", err);
     res.status(500).json({ error: "Failed to delete file" });
+  }
+});
+
+/**
+ * GET /api/likes
+ * Returns the current like count and whether the device has liked
+ */
+app.get("/api/likes", (req, res) => {
+  const deviceId = req.headers["x-device-id"] || req.query.deviceId;
+  const data = getLikesData();
+  const hasLiked = deviceId && data.likedDevices.includes(deviceId);
+  res.json({ count: data.count, hasLiked: !!hasLiked });
+});
+
+// Rate limiting store for likes (simple in-memory)
+const likeRateLimits = new Map(); // deviceId -> { count, resetTime }
+const LIKE_RATE_LIMIT = 10; // max 10 likes per minute per device
+const LIKE_RATE_WINDOW = 60 * 1000; // 1 minute window
+
+/**
+ * POST /api/likes
+ * Toggle like status for a device
+ * Requires deviceId in request body
+ * RATE LIMITED: 10 requests per minute per device
+ */
+app.post("/api/likes", (req, res) => {
+  const { deviceId, action } = req.body;
+  
+  // Validate deviceId
+  if (!deviceId || typeof deviceId !== "string") {
+    return res.status(400).json({ error: "deviceId required" });
+  }
+  
+  // Limit deviceId length to prevent DoS
+  if (deviceId.length > 64) {
+    return res.status(400).json({ error: "deviceId too long" });
+  }
+  
+  // Validate deviceId format (alphanumeric, hyphens, underscores only)
+  if (!/^[a-zA-Z0-9_-]+$/.test(deviceId)) {
+    return res.status(400).json({ error: "Invalid deviceId format" });
+  }
+  
+  // Rate limiting check
+  const now = Date.now();
+  const limitData = likeRateLimits.get(deviceId);
+  if (limitData) {
+    if (now < limitData.resetTime) {
+      if (limitData.count >= LIKE_RATE_LIMIT) {
+        return res.status(429).json({ error: "Rate limit exceeded. Try again later." });
+      }
+      limitData.count++;
+    } else {
+      // Reset window
+      limitData.count = 1;
+      limitData.resetTime = now + LIKE_RATE_WINDOW;
+    }
+  } else {
+    likeRateLimits.set(deviceId, { count: 1, resetTime: now + LIKE_RATE_WINDOW });
+  }
+  
+  // Cleanup old rate limit entries periodically
+  if (Math.random() < 0.01) { // 1% chance per request
+    const cutoff = now;
+    for (const [id, data] of likeRateLimits) {
+      if (data.resetTime < cutoff) likeRateLimits.delete(id);
+    }
+  }
+  
+  const data = getLikesData();
+  const hasLiked = data.likedDevices.includes(deviceId);
+  
+  if (action === "unlike" || hasLiked) {
+    // Unlike: remove device and decrement
+    data.likedDevices = data.likedDevices.filter(id => id !== deviceId);
+    data.count = Math.max(0, data.count - 1);
+  } else {
+    // Like: add device and increment
+    data.likedDevices.push(deviceId);
+    data.count += 1;
+  }
+  
+  if (saveLikesData(data)) {
+    res.json({ count: data.count, hasLiked: !hasLiked });
+  } else {
+    res.status(500).json({ error: "Failed to save likes" });
   }
 });
 

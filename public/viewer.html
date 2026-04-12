@@ -10,6 +10,12 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Viewer · PDF Presenter</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico">
+    <link rel="manifest" href="/favicon/site.webmanifest">
     <!-- PDF.js (local) -->
     <script src="/vendor/pdf.min.js"></script>
     <!-- Socket.io -->
@@ -18,7 +24,7 @@
   <body class="viewer-page">
     <!-- Connection screen -->
     <div class="viewer-connect" id="viewerConnect">
-      <div class="vc-logo">⬡</div>
+      <div class="vc-logo"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z"/></svg></div>
       <h1>Join Presentation</h1>
       <p>Enter the session ID to view the presentation</p>
       <div class="vc-input-row">

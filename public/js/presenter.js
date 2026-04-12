@@ -55,7 +55,6 @@ const laserDot = $("laserDot");
 const artificialCursor = $("artificialCursor");
 const remoteModal = $("remoteModal");
 const modalSessId = $("modalSessionId");
-const connCount = $("connectedCount");
 const remoteUrlEl = $("remoteUrlDisplay");
 const qrCanvas = $("qrCanvas");
 const toast = $("toast");
@@ -334,23 +333,23 @@ function connectSocket() {
   });
 
   socket.on("remote-accepted", ({ remoteSocketId }) => {
-    showToast(`✓ Remote ${remoteSocketId.slice(0, 8)}... accepted`);
+    showToast(`Remote ${remoteSocketId.slice(0, 8)}... accepted`);
   });
 
   socket.on("remote-rejected", ({ remoteSocketId }) => {
-    showToast(`✗ Remote ${remoteSocketId.slice(0, 8)}... rejected`);
+    showToast(`Remote ${remoteSocketId.slice(0, 8)}... rejected`);
   });
 
   // Session renamed
   socket.on("session-renamed", ({ name }) => {
     updateSessionNameDisplay(name);
-    showToast(`✓ Session renamed to "${name}"`);
+    showToast(`Session renamed to "${name}"`);
   });
 
   // Session ended (from another tab or explicit end)
   socket.on("session-ended", ({ message }) => {
     clearSessionFromStorage();
-    showToast(`⚠ ${message}`);
+    showToast(`${message}`);
     setTimeout(() => {
       window.location.href = "/";
     }, 2000);
@@ -389,8 +388,8 @@ function showRemoteApprovalDialog(socketId, deviceId, count) {
   dialog.innerHTML = `
     <div class="remote-approval-content">
       <div class="remote-approval-header">
-        <h3>🔐 Remote Access Request</h3>
-        <button class="btn-close" onclick="dismissRemoteDialog()" title="Dismiss">✕</button>
+        <h3><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 8px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg> Remote Access Request</h3>
+        <button class="btn-close" onclick="dismissRemoteDialog()" title="Dismiss"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
       </div>
       <p>${escapeHtml(String(count))} remote(s) waiting</p>
       <p class="remote-id">Device: ${escapeHtml(displayId)}...</p>
@@ -417,7 +416,7 @@ function rejectRemote(socketId) {
 function blockRemote(socketId, deviceId) {
   if (deviceId) {
     socket.emit("remote-block", { sessionId: state.sessionId, deviceId });
-    showToast("✓ Device blocked from future requests");
+    showToast("Device blocked from future requests");
   }
   // Also reject the current request
   socket.emit("remote-reject", { sessionId: state.sessionId, remoteSocketId: socketId });
@@ -444,7 +443,7 @@ function hideRemoteApprovalDialog(socketId) {
 function toggleRemoteRequests() {
   remoteRequestsEnabled = !remoteRequestsEnabled;
   socket.emit("toggle-remote-requests", { sessionId: state.sessionId, enabled: remoteRequestsEnabled });
-  showToast(remoteRequestsEnabled ? "✓ Remote requests enabled" : "✕ Remote requests disabled");
+  showToast(remoteRequestsEnabled ? "Remote requests enabled" : "Remote requests disabled");
   // Update button if it exists
   const btn = $("toggleRemoteRequestsBtn");
   if (btn) {
@@ -480,7 +479,7 @@ fileInput.addEventListener("change", () => {
 
 function handleFileSelect(file) {
   if (!file || file.type !== "application/pdf") {
-    showToast("⚠ Please select a valid PDF file");
+    showToast("Please select a valid PDF file");
     return;
   }
   uploadFile(file);
@@ -518,7 +517,7 @@ async function uploadFile(file) {
         resolve(data);
       } else {
         showToast(
-          "⚠ Upload failed: " +
+          "Upload failed: " +
             (JSON.parse(xhr.responseText)?.error || "Unknown error"),
         );
         progressDiv.style.display = "none";
@@ -528,7 +527,7 @@ async function uploadFile(file) {
     };
 
     xhr.onerror = () => {
-      showToast("⚠ Network error during upload");
+      showToast("Network error during upload");
       hideSwapOverlay();
       reject();
     };
@@ -553,7 +552,7 @@ function showSwapOverlay() {
       cancelBtn = document.createElement("button");
       cancelBtn.id = "swapCancelBtn";
       cancelBtn.className = "btn swap-cancel-btn";
-      cancelBtn.textContent = "✕ Cancel";
+      cancelBtn.textContent = "Cancel";
       cancelBtn.addEventListener("click", hideSwapOverlay);
       setupOverlay.querySelector(".setup-card").appendChild(cancelBtn);
     }
@@ -611,10 +610,10 @@ async function loadPdfFromUrl(url, filename = "", { skipNotify = false } = {}) {
     // Build thumbnail strip (async, non-blocking)
     buildThumbnailStrip();
 
-    showToast(`📄 ${filename || "PDF"} loaded — ${pdfDoc.numPages} slides`);
+    showToast(`${filename || "PDF"} loaded — ${pdfDoc.numPages} slides`);
   } catch (err) {
     console.error("PDF load error:", err);
-    showToast("⚠ Failed to load PDF: " + err.message);
+    showToast("Failed to load PDF: " + err.message);
     progressDiv.style.display = "none";
     hideSwapOverlay();
   }
@@ -733,12 +732,12 @@ function updateLinkHighlight(hoveredLink = null) {
 }
 
 canvas.addEventListener("click", (e) => {
-  if (!currentLinks.length) return;
-
   const rect = canvas.getBoundingClientRect();
   const x = (e.clientX - rect.left) * (canvas.width / rect.width);
   const y = (e.clientY - rect.top) * (canvas.height / rect.height);
 
+  // Check if clicking on a link
+  let clickedLink = false;
   for (const link of currentLinks) {
     if (
       x >= link.x &&
@@ -746,11 +745,17 @@ canvas.addEventListener("click", (e) => {
       y >= link.y &&
       y <= link.y + link.height
     ) {
+      clickedLink = true;
       if (link.url) {
         window.open(link.url, "_blank", "noopener,noreferrer");
       }
       break;
     }
+  }
+
+  // If not clicking on a link, go to next slide
+  if (!clickedLink) {
+    nextSlide();
   }
 });
 
@@ -956,7 +961,7 @@ async function loadPdfLibrary() {
         <span class="library-name">${escapeHtml(decodeURIComponent(p.name.replace(/^\d+-/, "")))}</span>
         <div class="library-actions">
           <span class="library-load">Load →</span>
-          <button class="library-delete" title="Delete file">🗑️</button>
+          <button class="library-delete" title="Delete file"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg></button>
         </div>
       </div>`,
       )
@@ -987,16 +992,16 @@ async function loadPdfLibrary() {
           });
           if (res.ok) {
             item.remove();
-            showToast("✓ File deleted");
+            showToast("File deleted");
             // Hide library if empty
             if (!libList.querySelectorAll(".library-item").length) {
               $("pdfLibrary").style.display = "none";
             }
           } else {
-            showToast("⚠ Failed to delete file");
+            showToast("Failed to delete file");
           }
         } catch {
-          showToast("⚠ Failed to delete file");
+          showToast("Failed to delete file");
         }
       });
     });
@@ -1122,7 +1127,7 @@ $("applyIpBtn").addEventListener("click", () => {
   const ipNote = $("ipNote");
 
   if (ip && !/^[\d.a-zA-Z:-]+$/.test(ip)) {
-    ipNote.textContent = "⚠ Invalid IP address";
+    ipNote.textContent = "Invalid IP address";
     ipNote.style.color = "var(--danger)";
     return;
   }
@@ -1135,10 +1140,10 @@ $("applyIpBtn").addEventListener("click", () => {
 
   refreshQR(ip || null);
   ipNote.textContent = ip
-    ? `✓ QR now points to ${ip}`
+    ? `QR now points to ${ip}`
     : "Using localhost (LAN devices won't reach this)";
   ipNote.style.color = ip ? "var(--success)" : "var(--text-3)";
-  showToast(ip ? `✓ QR updated to ${ip}` : "✓ Reset to localhost");
+  showToast(ip ? `QR updated to ${ip}` : "Reset to localhost");
 });
 
 $("ipInput").addEventListener("keydown", (e) => {
@@ -1163,9 +1168,9 @@ $("copyUrlBtn").addEventListener("click", () => {
     textArea.select();
     try {
       document.execCommand("copy");
-      showToast("✓ Link copied to clipboard");
+      showToast("Link copied to clipboard");
     } catch (err) {
-      showToast("⚠ Copy failed — select the URL manually");
+      showToast("Copy failed — select the URL manually");
     }
     document.body.removeChild(textArea);
     return;
@@ -1173,8 +1178,8 @@ $("copyUrlBtn").addEventListener("click", () => {
   
   navigator.clipboard
     .writeText(state.remoteUrl)
-    .then(() => showToast("✓ Link copied to clipboard"))
-    .catch(() => showToast("⚠ Copy failed — select the URL manually"));
+    .then(() => showToast("Link copied to clipboard"))
+    .catch(() => showToast("Copy failed — select the URL manually"));
 });
 
 // ─── Viewer Modal & QR ───────────────────────────────────────────────────────
@@ -1211,7 +1216,7 @@ $("orientLandscape").addEventListener("click", () => {
   currentOrientation = "landscape";
   localStorage.setItem("presenter-orientation", currentOrientation);
   updateOrientationButtons();
-  showToast("✓ Orientation set to Landscape");
+  showToast("Orientation set to Landscape");
   const savedIp = localStorage.getItem("presenter-ip");
   refreshViewerQR(savedIp || null);
 });
@@ -1220,7 +1225,7 @@ $("orientPortrait").addEventListener("click", () => {
   currentOrientation = "portrait";
   localStorage.setItem("presenter-orientation", currentOrientation);
   updateOrientationButtons();
-  showToast("✓ Orientation set to Portrait");
+  showToast("Orientation set to Portrait");
   const savedIp = localStorage.getItem("presenter-ip");
   refreshViewerQR(savedIp || null);
 });
@@ -1269,8 +1274,8 @@ $("copyViewerUrlBtn").addEventListener("click", () => {
   if (navigator.clipboard && window.isSecureContext) {
     navigator.clipboard
       .writeText(urlString)
-      .then(() => showToast("✓ Viewer link copied"))
-      .catch(() => showToast("⚠ Copy failed"));
+      .then(() => showToast("Viewer link copied"))
+      .catch(() => showToast("Copy failed"));
   } else {
     // Fallback for non-secure contexts (HTTP)
     const textArea = document.createElement("textarea");
@@ -1282,9 +1287,9 @@ $("copyViewerUrlBtn").addEventListener("click", () => {
     textArea.select();
     try {
       document.execCommand("copy");
-      showToast("✓ Viewer link copied");
+      showToast("Viewer link copied");
     } catch (err) {
-      showToast("⚠ Copy failed - please copy manually");
+      showToast("Copy failed - please copy manually");
       console.error("Copy failed:", err);
     }
     document.body.removeChild(textArea);
@@ -1303,11 +1308,25 @@ themeToggle.addEventListener("click", () => {
   localStorage.setItem("presenter-theme", isDark ? "dark" : "light");
 });
 
+// Setup page theme toggle
+const setupThemeToggle = $("setupThemeToggle");
+if (setupThemeToggle) {
+  setupThemeToggle.addEventListener("click", () => {
+    isDark = !isDark;
+    document.documentElement.dataset.theme = isDark ? "dark" : "light";
+    setupThemeToggle.innerHTML = isDark ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+    localStorage.setItem("presenter-theme", isDark ? "dark" : "light");
+  });
+}
+
 const savedTheme = localStorage.getItem("presenter-theme");
 if (savedTheme === "light") {
   isDark = false;
   document.documentElement.dataset.theme = "light";
   themeToggle.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  if (setupThemeToggle) {
+    setupThemeToggle.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
+  }
 }
 
 // ─── Fullscreen ───────────────────────────────────────────────────────────────
@@ -1360,6 +1379,12 @@ async function bootstrap() {
   if (!restored) {
     // No existing session - show setup overlay for new session creation
     setupOverlay.style.display = "flex";
+    // Auto-focus and select session name input
+    const nameInput = $("sessionNameInput");
+    if (nameInput) {
+      nameInput.focus();
+      nameInput.select();
+    }
   }
 }
 
@@ -1398,13 +1423,12 @@ $("startSessionBtn")?.addEventListener("click", async () => {
   const passwordInput = $("sessionPasswordInput");
   const password = passwordInput?.value?.trim() || null;
   if (password && password.length < 4) {
-    showToast("⚠ Password must be at least 4 characters");
+    showToast("Password must be at least 4 characters");
     return;
   }
 
   await initSession(sessionName, password);
 
-  // Show upload zone after session created
   const uploadZone = $("uploadZone");
   const startBtn = $("startSessionBtn");
   const nameInputDiv = nameInput?.parentElement;
@@ -1415,7 +1439,6 @@ $("startSessionBtn")?.addEventListener("click", async () => {
   if (nameInputDiv) nameInputDiv.style.display = "none";
   if (passwordInputDiv) passwordInputDiv.style.display = "none";
 
-  // Update subtitle
   const subtitle = $("setupSubtitle");
   if (subtitle) subtitle.textContent = "Session created! Upload a PDF to start presenting.";
 });
@@ -1427,3 +1450,149 @@ $("endSessionBtn")?.addEventListener("click", () => {
     endSession();
   }
 });
+
+// ─── Dhikr Toast Notifications ────────────────────────────────────────────────
+
+const dhikrList = [
+  "الْحَمْدُ لِلَّهِ",
+  "لَا إِلٰهَ إِلَّا اللَّهُ",
+  "اللَّهُ أَكْبَرُ",
+  "سُبْحَانَ اللَّه",
+  "اللَّهُمَّ صَلِّ عَلَىٰ مُحَمَّدٍ ﷺ",
+  "اللَّهُمَّ إِنِّي أَسْأَلُكَ الْجَنَّةَ",
+  "اللَّهُ أَكْبَرُ كَبِيرًا",
+  "الْحَمْدُ لِلَّهِ كَثِيرًا",
+  "سُبْحَانَ اللَّهِ بُكْرَةً وَأَصِيلًا",
+  "اللَّهُمَّ يَسِّرْ لِي أَمْرِي",
+  "اللَّهُمَّ اغْفِرْ لِي",
+  "اللَّهُمَّ اشْرَحْ لِي صَدْرِي"
+];
+
+let dhikrToastElement = null;
+let dhikrInterval = null;
+
+function showDhikrToast() {
+  if (document.fullscreenElement) return;
+  
+  const randomDhikr = dhikrList[Math.floor(Math.random() * dhikrList.length)];
+  
+  if (!dhikrToastElement) {
+    dhikrToastElement = document.createElement("div");
+    dhikrToastElement.className = "dhikr-toast";
+    dhikrToastElement.addEventListener("click", hideDhikrToast);
+    document.body.appendChild(dhikrToastElement);
+  }
+  
+  dhikrToastElement.textContent = randomDhikr;
+  dhikrToastElement.classList.add("visible");
+  
+  setTimeout(() => {
+    hideDhikrToast();
+  }, 8000);
+}
+
+function hideDhikrToast() {
+  if (dhikrToastElement) {
+    dhikrToastElement.classList.remove("visible");
+  }
+}
+
+function startDhikrNotifications() {
+  setTimeout(() => {
+    showDhikrToast();
+  }, 2000);
+  
+  const scheduleNextDhikr = () => {
+    const randomDelay = Math.floor(Math.random() * 180000) + 120000; // 2-5 minutes
+    dhikrInterval = setTimeout(() => {
+      showDhikrToast();
+      scheduleNextDhikr();
+    }, randomDelay);
+  };
+  
+  scheduleNextDhikr();
+}
+
+function stopDhikrNotifications() {
+  if (dhikrInterval) {
+    clearTimeout(dhikrInterval);
+    dhikrInterval = null;
+  }
+  hideDhikrToast();
+  startDhikrNotifications();
+}
+
+startDhikrNotifications();
+
+// ─── Like Button Functionality ────────────────────────────────────────────────
+
+const likeBtn = $("likeBtn");
+const likeCount = $("likeCount");
+let currentHasLiked = false;
+
+// Generate or retrieve device ID for unique like tracking
+function getDeviceId() {
+  let deviceId = localStorage.getItem("pdf-presenter-device-id");
+  if (!deviceId) {
+    deviceId = crypto.randomUUID?.() || Math.random().toString(36).substring(2, 15);
+    localStorage.setItem("pdf-presenter-device-id", deviceId);
+  }
+  return deviceId;
+}
+
+// Fetch like data from server
+async function fetchLikeData() {
+  const deviceId = getDeviceId();
+  try {
+    const response = await fetch(`/api/likes?deviceId=${deviceId}`);
+    if (response.ok) {
+      const data = await response.json();
+      if (likeCount) likeCount.textContent = data.count;
+      currentHasLiked = data.hasLiked;
+      if (likeBtn) {
+        if (currentHasLiked) {
+          likeBtn.classList.add("liked");
+        } else {
+          likeBtn.classList.remove("liked");
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Likes] Failed to fetch like data:", err);
+  }
+}
+
+// Handle like button click
+async function handleLike() {
+  const deviceId = getDeviceId();
+  const action = currentHasLiked ? "unlike" : "like";
+  
+  try {
+    const response = await fetch("/api/likes", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ deviceId, action })
+    });
+    
+    if (response.ok) {
+      const data = await response.json();
+      if (likeCount) likeCount.textContent = data.count;
+      currentHasLiked = data.hasLiked;
+      if (likeBtn) {
+        if (currentHasLiked) {
+          likeBtn.classList.add("liked");
+        } else {
+          likeBtn.classList.remove("liked");
+        }
+      }
+    }
+  } catch (err) {
+    console.error("[Likes] Failed to update like:", err);
+  }
+}
+
+// Initialize like button
+if (likeBtn) {
+  likeBtn.addEventListener("click", handleLike);
+  fetchLikeData();
+}

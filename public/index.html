@@ -5,6 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>PDF Presenter</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <link rel="preload" href="/Amiri-Regular.ttf" as="font" type="font/ttf" crossorigin />
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico">
+    <link rel="manifest" href="/favicon/site.webmanifest">
     <!-- PDF.js (local) -->
     <script src="/vendor/pdf.min.js"></script>
     <!-- Socket.io -->
@@ -16,7 +23,7 @@
     <!-- ── Top Bar ─────────────────────────────────────────────────── -->
     <header class="topbar" id="topbar">
       <div class="topbar-left">
-        <span class="logo">⬡ Presenter</span>
+        <span class="logo"><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z"/></svg> Presenter</span>
         <span class="session-name-display" id="sessionNameDisplay" title="Session Name" style="display: none; color: var(--accent); font-weight: 600; font-size: 0.9rem; margin-left: 12px; max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">Untitled Session</span>
         <span class="session-badge" id="sessionBadge" title="Session ID"
           >—</span
@@ -43,11 +50,12 @@
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
         </button>
         <button
-          class="btn btn-primary"
+          class="btn btn-secondary"
           id="showRemoteBtn"
           title="Show remote QR"
         >
-          📱 Remote
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><rect x="6" y="2" width="12" height="20" rx="2" ry="2"/><circle cx="12" cy="7" r="1"/><circle cx="12" cy="12" r="1"/><circle cx="12" cy="17" r="1"/><line x1="8" y1="6" x2="10" y2="6"/><line x1="8" y1="11" x2="10" y2="11"/><line x1="8" y1="16" x2="10" y2="16"/></svg>
+          Remote
         </button>
         <button
           class="btn btn-secondary"
@@ -72,7 +80,12 @@
     <!-- ── Setup Panel (shown before PDF is loaded, and when swapping) ─ -->
     <div class="setup-overlay" id="setupOverlay">
       <div class="setup-card">
-        <div class="setup-logo">⬡</div>
+        <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 8px;">
+          <div class="setup-logo"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z"/></svg></div>
+          <button class="btn-icon" id="setupThemeToggle" title="Toggle theme" style="flex-shrink: 0;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+          </button>
+        </div>
         <h1 id="setupTitle">PDF Presenter</h1>
         <p class="setup-sub" id="setupSubtitle">
           Upload a PDF and start presenting. Control slides from any device.
@@ -138,6 +151,13 @@
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M9 12l2 2 4-4M21 12c0 4.97-4.03 9-9 9s-9-4.03-9-9 4.03-9 9-9c1.2 0 2.35.24 3.4.67"/></svg>
             Apache-2.0 License
           </span>
+          <span class="footer-separator">·</span>
+          <button class="footer-like-btn" id="likeBtn" title="Like this app">
+            <svg class="like-heart" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/>
+            </svg>
+            <span class="like-count" id="likeCount">0</span>
+          </button>
         </footer>
       </div>
     </div>
@@ -235,10 +255,12 @@
           <label class="orientation-label">Presentation Orientation:</label>
           <div class="orientation-toggle">
             <button class="orientation-btn active" id="orientLandscape" data-orient="landscape">
-              🖥️ Landscape
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              Landscape
             </button>
             <button class="orientation-btn" id="orientPortrait" data-orient="portrait">
-              📱 Portrait
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12" y2="18.01"/></svg>
+              Portrait
             </button>
           </div>
           <p class="orientation-hint">

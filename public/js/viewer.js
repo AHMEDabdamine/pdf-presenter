@@ -210,12 +210,12 @@ async function verifyPassword() {
       viewerToken = data.viewerToken;
       // Persist token for refresh recovery
       saveViewerToken(state.sessionId, viewerToken);
-      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg></span> Access granted!';
+      vcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg> ' + escapeHtml("Access granted!");
       vcHint.style.color = "var(--success)";
       passwordRow.style.display = "none";
       initSocket();
     } else {
-      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg></span> ' + (data.error || "Invalid password");
+      vcHint.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> ' + escapeHtml(data.error || "Invalid password");
       vcHint.style.color = "var(--danger)";
       passwordInput.value = "";
       passwordInput.focus();
@@ -829,5 +829,79 @@ document.addEventListener("fullscreenchange", () => {
     if (state.pdfDoc) renderCurrentSlide();
   }, 100);
 });
+
+// ─── Dhikr Toast Notifications ────────────────────────────────────────────────
+
+const dhikrList = [
+  "الْحَمْدُ لِلَّهِ",
+  "لَا إِلٰهَ إِلَّا اللَّهُ",
+  "اللَّهُ أَكْبَرُ",
+  "سُبْحَانَ اللَّه",
+  "اللَّهُمَّ صَلِّ عَلَىٰ مُحَمَّدٍ ﷺ",
+  "اللَّهُمَّ إِنِّي أَسْأَلُكَ الْجَنَّةَ",
+  "اللَّهُ أَكْبَرُ كَبِيرًا",
+  "الْحَمْدُ لِلَّهِ كَثِيرًا",
+  "سُبْحَانَ اللَّهِ بُكْرَةً وَأَصِيلًا",
+  "اللَّهُمَّ يَسِّرْ لِي أَمْرِي",
+  "اللَّهُمَّ اغْفِرْ لِي",
+  "اللَّهُمَّ اشْرَحْ لِي صَدْرِي"
+];
+
+let dhikrToastElement = null;
+let dhikrInterval = null;
+
+function showDhikrToast() {
+  const randomDhikr = dhikrList[Math.floor(Math.random() * dhikrList.length)];
+  
+  if (!dhikrToastElement) {
+    dhikrToastElement = document.createElement("div");
+    dhikrToastElement.className = "dhikr-toast";
+    dhikrToastElement.addEventListener("click", hideDhikrToast);
+    document.body.appendChild(dhikrToastElement);
+  }
+  
+  dhikrToastElement.textContent = randomDhikr;
+  dhikrToastElement.classList.add("visible");
+  
+  // Auto hide after 8 seconds
+  setTimeout(() => {
+    hideDhikrToast();
+  }, 8000);
+}
+
+function hideDhikrToast() {
+  if (dhikrToastElement) {
+    dhikrToastElement.classList.remove("visible");
+  }
+}
+
+function startDhikrNotifications() {
+  // Show one immediately on load
+  setTimeout(() => {
+    showDhikrToast();
+  }, 2000);
+  
+  // Then show at random intervals between 2-5 minutes
+  const scheduleNextDhikr = () => {
+    const randomDelay = Math.floor(Math.random() * 180000) + 120000; // 2-5 minutes
+    dhikrInterval = setTimeout(() => {
+      showDhikrToast();
+      scheduleNextDhikr();
+    }, randomDelay);
+  };
+  
+  scheduleNextDhikr();
+}
+
+function stopDhikrNotifications() {
+  if (dhikrInterval) {
+    clearTimeout(dhikrInterval);
+    dhikrInterval = null;
+  }
+  hideDhikrToast();
+}
+
+// Start dhikr notifications (not tied to session)
+startDhikrNotifications();
 
 console.log("[Viewer] Script loaded");

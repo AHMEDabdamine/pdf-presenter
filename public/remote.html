@@ -10,12 +10,18 @@
     <meta name="mobile-web-app-capable" content="yes" />
     <title>Remote Control · PDF Presenter</title>
     <link rel="stylesheet" href="/css/style.css" />
+    <!-- Favicon -->
+    <link rel="apple-touch-icon" sizes="180x180" href="/favicon/apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon/favicon-32x32.png">
+    <link rel="icon" type="image/png" sizes="16x16" href="/favicon/favicon-16x16.png">
+    <link rel="icon" type="image/x-icon" href="/favicon/favicon.ico">
+    <link rel="manifest" href="/favicon/site.webmanifest">
     <script src="/socket.io/socket.io.js"></script>
   </head>
   <body class="remote-page">
     <!-- Connection screen -->
     <div class="remote-connect" id="remoteConnect">
-      <div class="rc-logo">⬡</div>
+      <div class="rc-logo"><svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2l8.66 5v10L12 22l-8.66-5V7L12 2z"/></svg></div>
       <h1>Remote Control</h1>
       <p>Enter your session ID to connect</p>
       <div class="rc-input-row">
@@ -51,7 +57,7 @@
             id="rcCursorToggle"
             title="Toggle Cursor"
           >
-            👆
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3l7.07 16.97 2.51-7.39 7.39-2.51L3 3z"/><circle cx="12" cy="12" r="1"/></svg>
           </button>
         </div>
         <div style="display: flex; gap: 6px; align-items: center">
@@ -147,15 +153,28 @@
               type="range"
               id="tpSpeed"
               min="0"
-              max="5"
-              step="0.5"
+              max="8"
+              step="0.1"
               value="1.5"
             />
+            <span class="tp-speed-value" id="tpSpeedValue">1.5</span>
           </div>
           <button class="btn btn-sm" id="tpPlayPause">⏸ Pause</button>
         </div>
         <div class="tp-text-wrap" id="tpTextWrap">
           <div class="tp-text" id="tpText"></div>
+        </div>
+        <!-- Slide controls for fullscreen mode -->
+        <div class="tp-slide-controls" id="tpSlideControls">
+          <button class="tp-slide-btn" id="tpPrevSlide">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M15 18l-6-6 6-6"/></svg>
+            Prev
+          </button>
+          <span class="tp-slide-indicator" id="tpSlideIndicator">1 / 1</span>
+          <button class="tp-slide-btn" id="tpNextSlide">
+            Next
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18l6-6-6-6"/></svg>
+          </button>
         </div>
       </div>
     </div>
