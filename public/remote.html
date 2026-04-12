@@ -38,13 +38,13 @@
         <span class="rc-session-name" id="rcSessionName" style="font-weight: 600; color: var(--accent); margin-right: 8px; display: none;">Untitled Session</span>
         <span class="rc-session-badge" id="rcSessionBadge">—</span>
         <div style="display: flex; align-items: center; gap: 8px">
-          <span class="rc-status connected" id="rcStatusDot">● Live</span>
+          <span class="rc-status connected" id="rcStatusDot">Live</span>
           <button
             class="btn-icon rc-fullscreen-btn"
             id="rcHeaderFullscreen"
             title="Fullscreen"
           >
-            ⛶
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
           </button>
           <button
             class="btn-icon rc-cursor-btn"
@@ -56,10 +56,10 @@
         </div>
         <div style="display: flex; gap: 6px; align-items: center">
           <button class="btn-icon" id="rcFullscreen" title="Fullscreen">
-            ⛶
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
           </button>
           <button class="btn-icon" id="rcDisconnect" title="Disconnect">
-            ✕
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg>
           </button>
         </div>
       </div>
@@ -139,7 +139,7 @@
         style="display: none"
       >
         <div class="tp-toolbar">
-          <button class="btn-icon" id="tpClose">✕</button>
+          <button class="btn-icon" id="tpClose"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6L6 18M6 6l12 12"/></svg></button>
           <span class="tp-title">Teleprompter</span>
           <div class="tp-speed-row">
             <label>Speed</label>
@@ -167,7 +167,7 @@
         <button class="rfs-btn" id="rfsPrev">&#8249;</button>
         <button class="rfs-btn rfs-next" id="rfsNext">&#8250;</button>
       </div>
-      <button class="rfs-exit" id="rfsExit">✕ Exit</button>
+      <button class="rfs-exit" id="rfsExit"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg> Exit</button>
     </div>
 
     <div class="toast" id="toast"></div>

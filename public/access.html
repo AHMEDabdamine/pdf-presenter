@@ -21,8 +21,11 @@
         border-radius: var(--radius-lg);
         border: 1px solid var(--border);
         box-shadow: var(--shadow-lg);
-        max-width: 450px;
+        max-width: 500px;
         width: 100%;
+        max-height: 90vh;
+        display: flex;
+        flex-direction: column;
       }
       .access-card h1 {
         margin-bottom: 12px;
@@ -39,6 +42,52 @@
         flex-direction: column;
         gap: 16px;
         margin-top: 20px;
+        overflow-y: auto;
+        flex: 1;
+        min-height: 0;
+        padding-right: 4px;
+      }
+      .session-list::-webkit-scrollbar {
+        width: 6px;
+      }
+      .session-list::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      .session-list::-webkit-scrollbar-thumb {
+        background: var(--border-2);
+        border-radius: 3px;
+      }
+      .search-wrapper {
+        position: relative;
+        margin-top: 20px;
+      }
+      .search-wrapper svg {
+        position: absolute;
+        left: 12px;
+        top: 50%;
+        transform: translateY(-50%);
+        color: var(--text-3);
+        pointer-events: none;
+      }
+      .search-input {
+        width: 100%;
+        padding: 10px 14px 10px 38px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        background: var(--bg-1);
+        color: var(--text);
+        font-size: 0.95rem;
+        outline: none;
+        transition: border-color 0.15s ease;
+      }
+      .search-input:focus {
+        border-color: var(--accent);
+      }
+      .search-input::placeholder {
+        color: var(--text-3);
+      }
+      .session-hidden {
+        display: none !important;
       }
       .session-item {
         background: var(--bg-3);
@@ -73,6 +122,51 @@
         overflow: hidden;
         text-overflow: ellipsis;
         max-width: 200px;
+      }
+      .session-meta {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-bottom: 12px;
+      }
+      .session-time {
+        font-size: 0.75rem;
+        color: var(--text-3);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .session-viewers {
+        font-size: 0.75rem;
+        color: var(--text-3);
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+      }
+      .filter-row {
+        display: flex;
+        gap: 8px;
+        margin-top: 16px;
+        align-items: center;
+      }
+      .filter-row label {
+        font-size: 0.8rem;
+        color: var(--text-3);
+        white-space: nowrap;
+      }
+      .sort-select, .time-filter-select {
+        flex: 1;
+        padding: 6px 10px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
+        background: var(--bg-1);
+        color: var(--text);
+        font-size: 0.8rem;
+        cursor: pointer;
+        outline: none;
+      }
+      .sort-select:focus, .time-filter-select:focus {
+        border-color: var(--accent);
       }
       .action-buttons {
         display: grid;
@@ -110,17 +204,87 @@
           Remote control access requires the presenter's QR code.
         </p>
 
+        <div class="search-wrapper">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <input type="text" id="sessionSearch" class="search-input" placeholder="Search sessions by name..." />
+        </div>
+
+        <div class="filter-row">
+          <label>Sort:</label>
+          <select id="sortSelect" class="sort-select">
+            <option value="newest">Newest first</option>
+            <option value="oldest">Oldest first</option>
+            <option value="name">By name</option>
+          </select>
+          <label>Time:</label>
+          <select id="timeFilter" class="time-filter-select">
+            <option value="all">All time</option>
+            <option value="1h">Last hour</option>
+            <option value="4h">Last 4 hours</option>
+            <option value="24h">Last 24 hours</option>
+          </select>
+        </div>
+
         <div id="sessionList" class="session-list">
           <div class="no-sessions">Loading active sessions...</div>
         </div>
 
         <button class="refresh-btn" onclick="fetchSessions()">
-          ↻ Refresh List
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Refresh List
         </button>
       </div>
     </div>
 
     <script>
+      let allSessions = [];
+
+      function formatTimeAgo(timestamp) {
+        if (!timestamp) return "";
+        const diff = Date.now() - timestamp;
+        const mins = Math.floor(diff / 60000);
+        if (mins < 1) return "just now";
+        if (mins < 60) return `${mins}m ago`;
+        const hrs = Math.floor(mins / 60);
+        if (hrs < 24) return `${hrs}h ${mins % 60}m ago`;
+        const days = Math.floor(hrs / 24);
+        return `${days}d ago`;
+      }
+
+      function getFilteredSessions() {
+        const query = document.getElementById("sessionSearch").value.toLowerCase().trim();
+        const sortBy = document.getElementById("sortSelect").value;
+        const timeFilter = document.getElementById("timeFilter").value;
+        const now = Date.now();
+
+        let filtered = allSessions;
+
+        // Time filter
+        if (timeFilter !== "all") {
+          const ms = { "1h": 3600000, "4h": 14400000, "24h": 86400000 }[timeFilter];
+          filtered = filtered.filter((s) => s.createdAt && (now - s.createdAt) <= ms);
+        }
+
+        // Search filter
+        if (query) {
+          filtered = filtered.filter((s) =>
+            (s.name || "Untitled Session").toLowerCase().includes(query)
+          );
+        }
+
+        // Sort
+        filtered = [...filtered];
+        if (sortBy === "newest") {
+          filtered.sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+        } else if (sortBy === "oldest") {
+          filtered.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+        } else if (sortBy === "name") {
+          filtered.sort((a, b) => (a.name || "Untitled Session").localeCompare(b.name || "Untitled Session"));
+        }
+
+        return filtered;
+      }
+
       async function fetchSessions() {
         const listEl = document.getElementById("sessionList");
         try {
@@ -128,31 +292,66 @@
           const data = await res.json();
 
           if (!data.sessions || data.sessions.length === 0) {
+            allSessions = [];
             listEl.innerHTML =
               '<div class="no-sessions">No active sessions found. Start a presentation first.</div>';
             return;
           }
 
-          listEl.innerHTML = data.sessions
-            .map(
-              (s) => `
-                    <div class="session-item">
-                        <div class="session-info">
-                            <span class="session-id">${s.id}</span>
-                            <span class="session-filename">${s.name || "Untitled Session"} ${s.hasPassword ? '🔒' : ''}</span>
-                        </div>
-                        <div class="action-buttons">
-                            <a href="/viewer.html?session=${s.id}" class="btn btn-sm" style="text-decoration:none; text-align:center; background: var(--bg-4); color: var(--text); width: 100%;">👁️ View ${s.hasPassword ? '(Password Required)' : ''}</a>
-                        </div>
-                    </div>
-                `,
-            )
-            .join("");
+          allSessions = data.sessions;
+          renderSessions(getFilteredSessions());
         } catch (err) {
           listEl.innerHTML =
             '<div class="no-sessions">Error fetching sessions. Is the server running?</div>';
         }
       }
+
+      function renderSessions(sessions) {
+        const listEl = document.getElementById("sessionList");
+        if (sessions.length === 0) {
+          listEl.innerHTML =
+            '<div class="no-sessions">No matching sessions found.</div>';
+          return;
+        }
+        listEl.innerHTML = sessions
+          .map(
+            (s) => `
+                    <div class="session-item" data-name="${(s.name || "Untitled Session").toLowerCase()}">
+                        <div class="session-info">
+                            <span class="session-id">${s.id}</span>
+                            <span class="session-filename">${s.name || "Untitled Session"} ${s.hasPassword ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-left: 4px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>' : ''}</span>
+                        </div>
+                        <div class="session-meta">
+                            <span class="session-time">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+                                ${formatTimeAgo(s.createdAt)}
+                            </span>
+                            <span class="session-viewers">
+                                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17 21v-2a4 4 0 00-4-4H5a4 4 0 00-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 00-3-3.87M16 3.13a4 4 0 010 7.75"/></svg>
+                                ${s.viewerCount || 0} viewer${s.viewerCount !== 1 ? 's' : ''}
+                            </span>
+                        </div>
+                        <div class="action-buttons">
+                            <a href="/viewer.html?session=${s.id}" class="btn btn-sm" style="text-decoration:none; text-align:center; width: 100%;"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg> View ${s.hasPassword ? '(Password Required)' : ''}</a>
+                        </div>
+                    </div>
+                `,
+          )
+          .join("");
+      }
+
+      // Search filter
+      document.getElementById("sessionSearch").addEventListener("input", () => {
+        renderSessions(getFilteredSessions());
+      });
+
+      // Sort and time filter
+      document.getElementById("sortSelect").addEventListener("change", () => {
+        renderSessions(getFilteredSessions());
+      });
+      document.getElementById("timeFilter").addEventListener("change", () => {
+        renderSessions(getFilteredSessions());
+      });
 
       // Auto-refresh every 10 seconds
       fetchSessions();

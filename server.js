@@ -16,6 +16,7 @@ const multer = require("multer");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
+const os = require("os");
 const bcrypt = require("bcrypt");
 const QRCode = require("qrcode");
 const { v4: uuidv4 } = require("uuid");
@@ -125,28 +126,43 @@ function validateUploadToken(sessionId, token) {
   return crypto.timingSafeEqual(a, b);
 }
 
-//  Viewer Token Management - One-time tokens for password-protected sessions
-const viewerTokens = new Map(); // sessionId -> Set of valid tokens
+//  Viewer Token Management - Time-limited tokens for password-protected sessions
+const viewerTokens = new Map(); // sessionId -> Map(token -> expiryTimestamp)
+const VIEWER_TOKEN_TTL = 5 * 60 * 1000; // 5 minutes
 
 function generateViewerToken(sessionId) {
   const token = crypto.randomBytes(32).toString("hex");
+  const expiry = Date.now() + VIEWER_TOKEN_TTL;
   if (!viewerTokens.has(sessionId)) {
-    viewerTokens.set(sessionId, new Set());
+    viewerTokens.set(sessionId, new Map());
   }
-  viewerTokens.get(sessionId).add(token);
+  viewerTokens.get(sessionId).set(token, expiry);
   return token;
 }
 
 function validateViewerToken(sessionId, token) {
   const tokens = viewerTokens.get(sessionId);
   if (!tokens || !token) return false;
-  const valid = tokens.has(token);
-  //  SECURITY: Single-use tokens - delete after validation
-  if (valid) {
+  const expiry = tokens.get(token);
+  if (!expiry) return false;
+  //  SECURITY: Check if token is expired
+  if (Date.now() > expiry) {
     tokens.delete(token);
+    return false;
   }
-  return valid;
+  return true;
 }
+
+// Cleanup expired viewer tokens periodically
+setInterval(() => {
+  const now = Date.now();
+  viewerTokens.forEach((tokens, sessionId) => {
+    tokens.forEach((expiry, token) => {
+      if (now > expiry) tokens.delete(token);
+    });
+    if (tokens.size === 0) viewerTokens.delete(sessionId);
+  });
+}, 60000); // Clean up every minute
 
 //  Check if request is from localhost/internal network
 // NOTE: If running behind a trusted proxy, configure with app.set('trust proxy', 1)
@@ -181,7 +197,9 @@ function getOrCreateSession(sessionId, name = null, passwordHash = null) {
       presenterSocket: null,
       connectedViewers: new Set(),
       pendingRemotes: new Map(), // socketId -> { socketId, requestedAt }
-      approvedRemotes: new Set(), // socketIds that can rejoin without approval
+      approvedRemotes: new Set(), // deviceIds that can rejoin without approval
+      blockedRemotes: new Set(), // deviceIds that are blocked from requesting access
+      remoteRequestsEnabled: true, // toggle to stop receiving all remote requests
       name: sanitizeSessionName(name) || "Untitled Session",
       passwordHash, //  SECURITY: Hashed password for viewer access (null = no password)
       passwordAttempts: new Map(), // Track failed attempts per IP
@@ -452,6 +470,25 @@ app.get("/health", (req, res) => {
 });
 
 /**
+ * GET /api/ip
+ * Returns the machine's LAN IP address for QR code generation.
+ *  Picks the first non-internal IPv4 address from network interfaces.
+ */
+app.get("/api/ip", (req, res) => {
+  const interfaces = os.networkInterfaces();
+  const ips = [];
+  for (const name of Object.keys(interfaces)) {
+    for (const iface of interfaces[name]) {
+      // Skip internal (loopback) and non-IPv4 addresses
+      if (!iface.internal && iface.family === "IPv4") {
+        ips.push({ address: iface.address, interface: name });
+      }
+    }
+  }
+  res.json({ ip: ips.length > 0 ? ips[0].address : null, all: ips });
+});
+
+/**
  * GET /api/session/:sessionId
  * Returns current session state (for rejoining).
  *  SECURED: Only accessible to same-origin or with valid token
@@ -496,6 +533,7 @@ app.get("/api/sessions", (req, res) => {
         : null,
       viewerCount: data.connectedViewers.size,
       hasPassword: !!data.passwordHash, //  SECURITY: Only expose if password exists
+      createdAt: data.createdAt,
     });
   });
   res.json({ sessions: activeSessions });
@@ -706,6 +744,7 @@ io.on("connection", (socket) => {
       currentSlide: session.currentSlide,
       totalSlides: session.totalSlides,
       pdfFile: session.pdfFile ? `/uploads/${session.pdfFile}` : null,
+      name: session.name,
     });
   });
 
@@ -735,6 +774,18 @@ io.on("connection", (socket) => {
     }
     if (!session.presenterSocket) {
       socket.emit("error", { message: "No presenter in session" });
+      return;
+    }
+
+    //  CHECK: Remote requests disabled by presenter
+    if (!session.remoteRequestsEnabled) {
+      socket.emit("error", { message: "Remote requests are currently disabled" });
+      return;
+    }
+
+    //  CHECK: Device is blocked
+    if (deviceId && session.blockedRemotes.has(deviceId)) {
+      socket.emit("error", { message: "Access denied" });
       return;
     }
 
@@ -868,6 +919,54 @@ io.on("connection", (socket) => {
     session.pendingRemotes.delete(remoteSocketId);
     io.to(session.presenterSocket).emit("remote-rejected", { remoteSocketId });
     if (!IS_PRODUCTION) console.log(`[WS] Presenter rejected remote ${remoteSocketId} in session ${sessionId}`);
+  });
+
+  /**
+   * remote-block: Presenter blocks a device from requesting access.
+   */
+  socket.on("remote-block", ({ sessionId, deviceId }) => {
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session || !deviceId) return;
+
+    // Add to blocked list
+    session.blockedRemotes.add(deviceId);
+    // Remove from approved if previously approved
+    session.approvedRemotes.delete(deviceId);
+
+    // Remove any pending request from this device
+    for (const [socketId, pending] of session.pendingRemotes) {
+      if (pending.deviceId === deviceId) {
+        const remoteSocket = io.sockets.sockets.get(socketId);
+        if (remoteSocket) {
+          remoteSocket.emit("remote-rejected", { message: "You have been blocked from this session" });
+          remoteSocket.disconnect(true);
+        }
+        session.pendingRemotes.delete(socketId);
+        io.to(session.presenterSocket).emit("remote-rejected", { remoteSocketId: socketId });
+        break;
+      }
+    }
+
+    socket.emit("remote-blocked", { deviceId });
+    if (!IS_PRODUCTION) console.log(`[WS] Device ${deviceId} blocked from session ${sessionId}`);
+  });
+
+  /**
+   * toggle-remote-requests: Presenter enables/disables remote requests.
+   */
+  socket.on("toggle-remote-requests", ({ sessionId, enabled }) => {
+    if (!requireSessionMatch(socket, sessionId)) return;
+    if (!requireRole(socket, ["presenter"])) return;
+
+    const session = sessions.get(sessionId);
+    if (!session) return;
+
+    session.remoteRequestsEnabled = enabled;
+    socket.emit("remote-requests-toggled", { enabled });
+    if (!IS_PRODUCTION) console.log(`[WS] Remote requests ${enabled ? "enabled" : "disabled"} for session ${sessionId}`);
   });
 
   /**

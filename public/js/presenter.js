@@ -66,18 +66,25 @@ function saveSessionToStorage() {
   if (state.sessionId && state.uploadToken) {
     sessionStorage.setItem("presenter-session-id", state.sessionId);
     sessionStorage.setItem("presenter-upload-token", state.uploadToken);
+    // Store URLs for QR code regeneration on refresh
+    if (state.remoteUrl) sessionStorage.setItem("presenter-remote-url", state.remoteUrl);
+    if (state.viewerUrl) sessionStorage.setItem("presenter-viewer-url", state.viewerUrl);
   }
 }
 
 function clearSessionFromStorage() {
   sessionStorage.removeItem("presenter-session-id");
   sessionStorage.removeItem("presenter-upload-token");
+  sessionStorage.removeItem("presenter-remote-url");
+  sessionStorage.removeItem("presenter-viewer-url");
 }
 
 function getSessionFromStorage() {
   return {
     sessionId: sessionStorage.getItem("presenter-session-id"),
     uploadToken: sessionStorage.getItem("presenter-upload-token"),
+    remoteUrl: sessionStorage.getItem("presenter-remote-url"),
+    viewerUrl: sessionStorage.getItem("presenter-viewer-url"),
   };
 }
 
@@ -104,8 +111,8 @@ async function initSession(name = null, password = null) {
     saveSessionToStorage();
 
     // Update UI badges
-    sessionBadge.textContent = data.sessionId;
-    modalSessId.textContent = data.sessionId;
+    if (sessionBadge) sessionBadge.textContent = data.sessionId || "—";
+    if (modalSessId) modalSessId.textContent = data.sessionId || "—";
     updateSessionNameDisplay(data.name);
 
     // Initial QR draw using saved IP address
@@ -115,19 +122,23 @@ async function initSession(name = null, password = null) {
     // Connect to WebSocket
     connectSocket();
 
-    // Load PDF library (previously uploaded PDFs)
-    loadPdfLibrary();
+    //  SECURITY: PDF library disabled - shows all files on server, security risk
+    // loadPdfLibrary();
   } catch (err) {
     console.error("Session init failed:", err);
-    showToast("⚠ Could not create session — is the server running?");
+    showToast("Could not create session — is the server running?", "warning");
   }
 }
 
 // ─── Session Restore ────────────────────────────────────────────────────────────
 
 async function restoreSession() {
-  const { sessionId, uploadToken } = getSessionFromStorage();
+  const { sessionId, uploadToken, remoteUrl, viewerUrl } = getSessionFromStorage();
   if (!sessionId || !uploadToken) return false;
+
+  // Restore URLs first so QR generation works immediately
+  if (remoteUrl) state.remoteUrl = remoteUrl;
+  if (viewerUrl) state.viewerUrl = viewerUrl;
 
   try {
     // Try to fetch session state from server
@@ -156,12 +167,23 @@ async function restoreSession() {
     state.uploadToken = uploadToken;
     state.currentSlide = data.currentSlide || 1;
     state.totalSlides = data.totalSlides || 0;
+    // Rebuild URLs with current host if needed (for when hostname changed)
+    if (!state.remoteUrl) {
+      state.remoteUrl = `${window.location.origin}/remote.html?session=${sessionId}`;
+    }
+    if (!state.viewerUrl) {
+      state.viewerUrl = `${window.location.origin}/viewer.html?session=${sessionId}`;
+    }
 
     // Update UI
-    sessionBadge.textContent = sessionId;
-    modalSessId.textContent = sessionId;
+    if (sessionBadge) sessionBadge.textContent = sessionId || "—";
+    if (modalSessId) modalSessId.textContent = sessionId || "—";
     updateSessionNameDisplay(data.name);
     updateCounterUI();
+
+    // Regenerate QR codes with restored URLs
+    const savedIp = localStorage.getItem("presenter-ip");
+    refreshQR(savedIp || null);
 
     // Connect to WebSocket
     connectSocket();
@@ -185,10 +207,10 @@ async function restoreSession() {
       if (subtitle) subtitle.textContent = "Session restored! Upload a PDF to continue presenting.";
     }
 
-    // Load PDF library
-    loadPdfLibrary();
+    //  SECURITY: PDF library disabled - shows all files on server, security risk
+    // loadPdfLibrary();
 
-    showToast("✓ Session restored");
+    showToast("Session restored", "success");
     return true;
   } catch (err) {
     console.error("Session restore failed:", err);
@@ -291,7 +313,7 @@ function connectSocket() {
     }
   });
 
-  socket.on("connect_error", () => showToast("⚠ WebSocket connection lost"));
+  socket.on("connect_error", () => showToast("WebSocket connection lost", "warning"));
 
   socket.on("remote-count", ({ count }) => {
     state.connectedRemotes = count;
@@ -338,10 +360,11 @@ function connectSocket() {
 // ─── Remote Approval UI ───────────────────────────────────────────────────────
 
 let pendingRemotes = [];
+let remoteRequestsEnabled = true; // Local state for toggle
 
 function showRemoteApprovalDialog(socketId, deviceId, count) {
-  pendingRemotes.push(socketId);
-  
+  pendingRemotes.push({ socketId, deviceId });
+
   // Create or update the approval dialog
   let dialog = $("remoteApprovalDialog");
   if (!dialog) {
@@ -350,25 +373,31 @@ function showRemoteApprovalDialog(socketId, deviceId, count) {
     dialog.className = "remote-approval-dialog";
     document.body.appendChild(dialog);
   }
-  
+
   // Show device ID for identification
   const displayId = deviceId ? deviceId.slice(0, 8) : socketId.slice(0, 12);
-  
+
   // Escape HTML to prevent XSS
   const escapeHtml = (text) => {
     const div = document.createElement("div");
     div.textContent = text;
     return div.innerHTML;
   };
-  
+
+  const pending = pendingRemotes[0];
+
   dialog.innerHTML = `
     <div class="remote-approval-content">
-      <h3>🔐 Remote Access Request</h3>
-      <p>${escapeHtml(String(count))} remote(s) waiting for approval</p>
+      <div class="remote-approval-header">
+        <h3>🔐 Remote Access Request</h3>
+        <button class="btn-close" onclick="dismissRemoteDialog()" title="Dismiss">✕</button>
+      </div>
+      <p>${escapeHtml(String(count))} remote(s) waiting</p>
       <p class="remote-id">Device: ${escapeHtml(displayId)}...</p>
       <div class="remote-approval-buttons">
-        <button class="btn-approve" onclick="approveRemote('${escapeHtml(socketId)}')">Accept</button>
-        <button class="btn-reject" onclick="rejectRemote('${escapeHtml(socketId)}')">Reject</button>
+        <button class="btn-approve" onclick="approveRemote('${escapeHtml(pending.socketId)}')">Accept</button>
+        <button class="btn-reject" onclick="rejectRemote('${escapeHtml(pending.socketId)}')">Reject</button>
+        <button class="btn-block" onclick="blockRemote('${escapeHtml(pending.socketId)}', '${escapeHtml(pending.deviceId || "")}')" title="Block this device">Block</button>
       </div>
     </div>
   `;
@@ -385,14 +414,42 @@ function rejectRemote(socketId) {
   hideRemoteApprovalDialog(socketId);
 }
 
+function blockRemote(socketId, deviceId) {
+  if (deviceId) {
+    socket.emit("remote-block", { sessionId: state.sessionId, deviceId });
+    showToast("✓ Device blocked from future requests");
+  }
+  // Also reject the current request
+  socket.emit("remote-reject", { sessionId: state.sessionId, remoteSocketId: socketId });
+  hideRemoteApprovalDialog(socketId);
+}
+
+function dismissRemoteDialog() {
+  const dialog = $("remoteApprovalDialog");
+  if (dialog) dialog.style.display = "none";
+}
+
 function hideRemoteApprovalDialog(socketId) {
-  pendingRemotes = pendingRemotes.filter(id => id !== socketId);
+  pendingRemotes = pendingRemotes.filter(r => r.socketId !== socketId);
   const dialog = $("remoteApprovalDialog");
   if (dialog && pendingRemotes.length === 0) {
     dialog.style.display = "none";
   } else if (dialog && pendingRemotes.length > 0) {
     // Show next pending remote
-    showRemoteApprovalDialog(pendingRemotes[0], pendingRemotes.length);
+    showRemoteApprovalDialog(pendingRemotes[0].socketId, pendingRemotes[0].deviceId, pendingRemotes.length);
+  }
+}
+
+// Toggle remote requests on/off
+function toggleRemoteRequests() {
+  remoteRequestsEnabled = !remoteRequestsEnabled;
+  socket.emit("toggle-remote-requests", { sessionId: state.sessionId, enabled: remoteRequestsEnabled });
+  showToast(remoteRequestsEnabled ? "✓ Remote requests enabled" : "✕ Remote requests disabled");
+  // Update button if it exists
+  const btn = $("toggleRemoteRequestsBtn");
+  if (btn) {
+    btn.textContent = remoteRequestsEnabled ? "Disable Remote Requests" : "Enable Remote Requests";
+    btn.style.background = remoteRequestsEnabled ? "var(--danger)" : "var(--success)";
   }
 }
 
@@ -953,21 +1010,51 @@ async function loadPdfLibrary() {
 const changePdfBtn = $("changePdfBtn");
 if (changePdfBtn) {
   changePdfBtn.addEventListener("click", () => {
-    // Reload library list so newly uploaded PDFs appear
-    loadPdfLibrary();
+    //  SECURITY: PDF library disabled - shows all files on server, security risk
+    // loadPdfLibrary();
     showSwapOverlay();
   });
 }
 
 // ─── Remote Modal & QR ───────────────────────────────────────────────────────
 
-$("showRemoteBtn").addEventListener("click", () => {
+$("showRemoteBtn").addEventListener("click", async () => {
   remoteModal.style.display = "flex";
 
   const savedIp = localStorage.getItem("presenter-ip");
   if (savedIp) {
     $("ipInput").value = savedIp;
+  } else {
+    // Auto-detect machine LAN IP and pre-fill input (without applying to QR)
+    try {
+      const res = await fetch("/api/ip");
+      if (res.ok) {
+        const data = await res.json();
+        const selector = $("ipSelector");
+        if (data.all && data.all.length > 1) {
+          // Multiple interfaces — show dropdown
+          selector.innerHTML = "";
+          data.all.forEach(({ address, interface: iface }) => {
+            const opt = document.createElement("option");
+            opt.value = address;
+            opt.textContent = `${address} (${iface})`;
+            selector.appendChild(opt);
+          });
+          selector.style.display = "block";
+          $("ipInput").value = data.all[0].address;
+          $("ipNote").textContent = "Multiple networks detected — select or type IP, then Apply";
+          $("ipNote").style.color = "var(--text-3)";
+        } else if (data.ip) {
+          $("ipInput").value = data.ip;
+          $("ipNote").textContent = "Detected LAN IP — click Apply to update QR";
+          $("ipNote").style.color = "var(--text-3)";
+        }
+      }
+    } catch {}
   }
+
+  // Regenerate QR when modal opens (canvas needs to be visible)
+  refreshQR(savedIp || null);
 });
 $("closeRemoteModal").addEventListener("click", closeRemoteModal);
 remoteModal.addEventListener("click", (e) => {
@@ -997,7 +1084,14 @@ function refreshQR(ipOverride) {
   const viewerUrl = buildRemoteUrl(ipOverride, "viewer");
   state.viewerUrl = viewerUrl;
 
-  remoteUrlEl.textContent = remoteUrl;
+  if (remoteUrlEl) remoteUrlEl.textContent = remoteUrl || "—";
+
+  // Only generate QR if canvas is visible (has dimensions)
+  if (!qrCanvas || qrCanvas.offsetWidth === 0 || qrCanvas.offsetHeight === 0) {
+    return; // Canvas not visible, skip generation (will retry when modal opens)
+  }
+
+  if (!remoteUrl) return; // No URL to encode
 
   try {
     new QRious({
@@ -1009,7 +1103,7 @@ function refreshQR(ipOverride) {
     });
 
     const viewerQrCanvas = $("viewerQrCanvas");
-    if (viewerQrCanvas && state.viewerUrl) {
+    if (viewerQrCanvas && state.viewerUrl && viewerQrCanvas.offsetWidth > 0) {
       new QRious({
         element: viewerQrCanvas,
         value: viewerUrl,
@@ -1049,6 +1143,10 @@ $("applyIpBtn").addEventListener("click", () => {
 
 $("ipInput").addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("applyIpBtn").click();
+});
+
+$("ipSelector").addEventListener("change", (e) => {
+  $("ipInput").value = e.target.value;
 });
 
 $("copyUrlBtn").addEventListener("click", () => {
@@ -1181,7 +1279,7 @@ let isDark = true;
 themeToggle.addEventListener("click", () => {
   isDark = !isDark;
   document.documentElement.dataset.theme = isDark ? "dark" : "light";
-  themeToggle.textContent = isDark ? "☀" : "☾";
+  themeToggle.innerHTML = isDark ? '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2m0 18v2M4.22 4.22l1.42 1.42m12.72 12.72l1.42 1.42M1 12h2m18 0h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' : '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
   localStorage.setItem("presenter-theme", isDark ? "dark" : "light");
 });
 
@@ -1189,7 +1287,7 @@ const savedTheme = localStorage.getItem("presenter-theme");
 if (savedTheme === "light") {
   isDark = false;
   document.documentElement.dataset.theme = "light";
-  themeToggle.textContent = "☾";
+  themeToggle.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
 }
 
 // ─── Fullscreen ───────────────────────────────────────────────────────────────
@@ -1199,7 +1297,7 @@ const fullscreenBtn = $("fullscreenBtn");
 function toggleFullscreen() {
   if (!document.fullscreenElement) {
     document.documentElement.requestFullscreen().catch(() => {});
-    fullscreenBtn.textContent = "⛶";
+    fullscreenBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
   } else {
     document.exitFullscreen();
   }
@@ -1209,7 +1307,7 @@ fullscreenBtn.addEventListener("click", toggleFullscreen);
 
 document.addEventListener("fullscreenchange", () => {
   const inFS = !!document.fullscreenElement;
-  fullscreenBtn.textContent = inFS ? "⊠" : "⛶";
+  fullscreenBtn.innerHTML = inFS ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
   topbar.classList.toggle("hidden", inFS);
   slideStrip.classList.toggle("fs-hidden", inFS);
   slideWrapper.classList.toggle("fs-mode", inFS);
@@ -1255,6 +1353,21 @@ $("sessionNameInput")?.addEventListener("keydown", (e) => {
 });
 $("sessionPasswordInput")?.addEventListener("keydown", (e) => {
   if (e.key === "Enter") $("startSessionBtn")?.click();
+});
+
+// Password visibility toggle
+$("toggleSessionPassword")?.addEventListener("click", () => {
+  const input = $("sessionPasswordInput");
+  const btn = $("toggleSessionPassword");
+  if (input.type === "password") {
+    input.type = "text";
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19m-6.72-1.07a3 3 0 11-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+    btn.title = "Hide password";
+  } else {
+    input.type = "password";
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+    btn.title = "Show password";
+  }
 });
 
 $("startSessionBtn")?.addEventListener("click", async () => {

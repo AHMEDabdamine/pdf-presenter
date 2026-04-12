@@ -33,13 +33,19 @@
         <button class="btn btn-primary" id="connectBtn">Join</button>
       </div>
       <div class="vc-password-row" id="passwordRow" style="display: none; margin-top: 12px;">
-        <input
-          type="password"
-          id="passwordInput"
-          placeholder="Enter session password"
-          maxlength="32"
-          autocomplete="off"
-        />
+        <div class="password-input-wrapper" style="position: relative; flex: 1;">
+          <input
+            type="password"
+            id="passwordInput"
+            placeholder="Enter session password"
+            maxlength="32"
+            autocomplete="off"
+            style="padding-right: 40px;"
+          />
+          <button type="button" id="togglePassword" class="password-toggle-btn" style="position: absolute; right: 8px; top: 50%; transform: translateY(-50%); background: transparent; border: none; cursor: pointer; padding: 4px; color: var(--text-2);" title="Show password">
+            <svg class="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+          </button>
+        </div>
         <button class="btn btn-secondary" id="passwordBtn">Unlock</button>
       </div>
       <p class="vc-hint" id="vcHint"></p>
@@ -50,8 +56,10 @@
       <div class="vs-header" id="vsHeader">
         <span class="vs-session-name" id="vsSessionName" style="font-weight: 600; color: var(--accent); margin-right: 12px; display: none;">Untitled Session</span>
         <span class="vs-session-badge" id="vsSessionBadge">—</span>
-        <span class="vs-status connected" id="vsStatusDot">● Live</span>
-        <button class="vs-fullscreen-btn" id="vsFullscreenBtn" title="Fullscreen">⛶</button>
+        <span class="vs-status connected" id="vsStatusDot">Live</span>
+        <button class="vs-fullscreen-btn" id="vsFullscreenBtn" title="Fullscreen">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>
+        </button>
       </div>
 
       <!-- Slide canvas container -->
@@ -60,17 +68,24 @@
         <!-- Remote cursor indicator -->
         <div class="remote-cursor" id="remoteCursor"></div>
         <div class="vs-waiting" id="vsWaiting" style="display: none">
-          <div class="vs-waiting-icon">⏳</div>
+          <div class="vs-waiting-icon">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          </div>
           <span>Waiting for presenter to upload PDF...</span>
           <p class="vs-waiting-hint">Make sure you're scanning the QR code from the current presenter session. If the presenter reloaded, scan the new QR code.</p>
-          <button class="vs-waiting-btn" onclick="location.reload()">🔄 Refresh Session</button>
+          <button class="vs-waiting-btn" onclick="location.reload()">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+            Refresh Session
+          </button>
         </div>
         <div class="vs-loading" id="vsLoading" style="display: none">
           <div class="vs-spinner"></div>
           <span>Loading slide...</span>
         </div>
         <div class="vs-error" id="vsError" style="display: none">
-          <div class="vs-error-icon">⚠️</div>
+          <div class="vs-error-icon">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+          </div>
           <span id="vsErrorText">Error loading PDF</span>
         </div>
       </div>

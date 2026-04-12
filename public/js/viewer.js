@@ -61,6 +61,30 @@ const passwordBtn = $("passwordBtn");
 
 let viewerToken = null; //  SECURITY: Token for password-protected sessions
 
+// ─── Token Storage Helpers ───────────────────────────────────────────────────
+function saveViewerToken(sessionId, token) {
+  sessionStorage.setItem(`viewer-token-${sessionId}`, token);
+  sessionStorage.setItem(`viewer-token-time-${sessionId}`, Date.now().toString());
+}
+
+function getViewerToken(sessionId) {
+  const token = sessionStorage.getItem(`viewer-token-${sessionId}`);
+  const timestamp = sessionStorage.getItem(`viewer-token-time-${sessionId}`);
+  if (!token || !timestamp) return null;
+  // Check if token is expired (> 5 minutes old)
+  const age = Date.now() - parseInt(timestamp, 10);
+  if (age > 5 * 60 * 1000) {
+    clearViewerToken(sessionId);
+    return null;
+  }
+  return token;
+}
+
+function clearViewerToken(sessionId) {
+  sessionStorage.removeItem(`viewer-token-${sessionId}`);
+  sessionStorage.removeItem(`viewer-token-time-${sessionId}`);
+}
+
 // ─── Auto-connect from URL param ─────────────────────────────────────────────
 const params = new URLSearchParams(window.location.search);
 const urlSession = params.get("session");
@@ -89,13 +113,29 @@ passwordInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") verifyPassword();
 });
 
+// Password visibility toggle
+const togglePasswordBtn = $("togglePassword");
+if (togglePasswordBtn) {
+  togglePasswordBtn.addEventListener("click", () => {
+    if (passwordInput.type === "password") {
+      passwordInput.type = "text";
+      togglePasswordBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
+      togglePasswordBtn.title = "Hide password";
+    } else {
+      passwordInput.type = "password";
+      togglePasswordBtn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+      togglePasswordBtn.title = "Show password";
+    }
+  });
+}
+
 let socket = null;
 let reconnectInterval = null;
 
 async function connectToSession() {
   const id = sessionInput.value.trim().toUpperCase();
   if (!id || id.length < 4) {
-    vcHint.textContent = "⚠ Enter a valid session ID";
+    vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Enter a valid session ID';
     vcHint.style.color = "var(--danger)";
     return;
   }
@@ -105,29 +145,38 @@ async function connectToSession() {
   state.sessionId = id;
 
   //  SECURITY: Check if session requires password
+  // First, try to restore saved token for this session
+  viewerToken = getViewerToken(id);
+
   try {
     const res = await fetch(`/api/session/${id}/requires-password`);
     if (!res.ok) {
-      vcHint.textContent = "⚠ Session not found";
+      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Session not found';
       vcHint.style.color = "var(--danger)";
       return;
     }
     const data = await res.json();
 
-    if (data.requiresPassword) {
+    if (!data.requiresPassword) {
+      // No password required, proceed with connection
+      initSocket();
+    } else if (viewerToken) {
+      // Have a saved token, try to use it directly
+      vcHint.textContent = "Reconnecting...";
+      vcHint.style.color = "var(--text-3)";
+      passwordRow.style.display = "none";
+      initSocket();
+    } else {
       // Show password input
       passwordRow.style.display = "flex";
       passwordInput.focus();
-      vcHint.textContent = "🔒 This session requires a password";
+      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg></span> This session requires a password';
       vcHint.style.color = "var(--warning)";
       return; // Wait for password verification
     }
-
-    // No password required, proceed with connection
-    initSocket();
   } catch (err) {
     console.error("[Viewer] Failed to check password requirement:", err);
-    vcHint.textContent = "⚠ Connection failed";
+    vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Connection failed';
     vcHint.style.color = "var(--danger)";
   }
 }
@@ -135,7 +184,7 @@ async function connectToSession() {
 async function verifyPassword() {
   const password = passwordInput.value.trim();
   if (!password) {
-    vcHint.textContent = "⚠ Enter a password";
+    vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Enter a password';
     vcHint.style.color = "var(--danger)";
     return;
   }
@@ -159,19 +208,21 @@ async function verifyPassword() {
     if (data.valid) {
       //  SECURITY: Store viewer token for WebSocket auth
       viewerToken = data.viewerToken;
-      vcHint.textContent = "✓ Access granted!";
+      // Persist token for refresh recovery
+      saveViewerToken(state.sessionId, viewerToken);
+      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><polyline points="20 6 9 17 4 12"/></svg></span> Access granted!';
       vcHint.style.color = "var(--success)";
       passwordRow.style.display = "none";
       initSocket();
     } else {
-      vcHint.textContent = "✗ " + (data.error || "Invalid password");
+      vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M18 6L6 18M6 6l12 12"/></svg></span> ' + (data.error || "Invalid password");
       vcHint.style.color = "var(--danger)";
       passwordInput.value = "";
       passwordInput.focus();
     }
   } catch (err) {
     console.error("[Viewer] Password verification failed:", err);
-    vcHint.textContent = "⚠ Verification failed";
+    vcHint.innerHTML = '<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 4px;"><path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg></span> Verification failed';
     vcHint.style.color = "var(--danger)";
   } finally {
     passwordBtn.disabled = false;
@@ -204,7 +255,7 @@ function initSocket() {
       viewerToken, //  SECURITY: Include token for password-protected sessions
     });
 
-    vsStatusDot.textContent = "● Live";
+    vsStatusDot.innerHTML = '<span class="status-dot" style="display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; margin-right: 6px;"></span>Live';
     vsStatusDot.classList.remove("disconnected");
     vsStatusDot.classList.add("connected");
   });
@@ -232,7 +283,7 @@ function initSocket() {
     state.isConnected = true;
     state.reconnectAttempts = 0;
     hideReconnecting();
-    showToast("✓ Reconnected!");
+    showToast("Reconnected!", "success");
 
     socket.emit("join-session", {
       sessionId: state.sessionId,
@@ -243,7 +294,7 @@ function initSocket() {
 
   socket.on("reconnect_failed", () => {
     console.error("[Viewer] Reconnection failed");
-    showToast("⚠ Connection lost. Tap to retry.");
+    showToast("Connection lost. Tap to retry.", "warning");
     hideReconnecting();
   });
 
@@ -338,7 +389,7 @@ function initSocket() {
 
   // Session ended - show message and redirect
   socket.on("session-ended", ({ message }) => {
-    showToast(`⚠ ${message}`);
+    showToast(message, "warning");
     setTimeout(() => {
       window.location.href = "/access.html";
     }, 3000);
@@ -371,7 +422,7 @@ function showPdfSwapBanner(filename) {
   const banner = document.createElement("div");
   banner.id = "pdfSwapBanner";
   banner.className = "pdf-swap-banner";
-  banner.innerHTML = `<span>🔄</span> <span>Presenter switched to: <strong>${escapeHtml(filename)}</strong></span>`;
+  banner.innerHTML = `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align: middle; margin-right: 6px;"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg> <span>Presenter switched to: <strong>${escapeHtml(filename)}</strong></span>`;
   document.body.appendChild(banner);
 
   // Animate in
@@ -454,7 +505,7 @@ async function loadPdf(url) {
     vsLoading.style.display = "none";
     vsError.style.display = "flex";
     vsErrorText.textContent = "Failed to load PDF: " + (err.message || "Unknown error");
-    showToast("⚠ Failed to load PDF: " + err.message);
+    showToast("Failed to load PDF: " + err.message, "warning");
   }
 }
 
@@ -571,7 +622,7 @@ async function renderCurrentSlide(skipIfCached = false) {
       console.log("[Viewer] Render cancelled");
     } else {
       console.error("[Viewer] Render error:", err);
-      showToast("⚠ Render error: " + err.message);
+      showToast("Render error: " + err.message, "warning");
     }
     vsLoading.style.display = "none";
   } finally {
@@ -703,7 +754,7 @@ function flashSlideChange() {
   });
 }
 
-function showToast(msg) {
+function showToast(msg, type) {
   toast.textContent = msg;
   toast.style.opacity = "1";
   toast.style.transform = "translateY(0)";
@@ -747,7 +798,7 @@ function toggleFullscreen() {
     }
     state.isFullscreen = true;
     viewerSlideEl.classList.add("fs-mode");
-    vsFullscreenBtn.textContent = "⊠";
+    vsFullscreenBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"/></svg>';
   } else {
     if (document.exitFullscreen) {
       document.exitFullscreen().catch(() => {});
@@ -756,7 +807,7 @@ function toggleFullscreen() {
     }
     state.isFullscreen = false;
     viewerSlideEl.classList.remove("fs-mode");
-    vsFullscreenBtn.textContent = "⛶";
+    vsFullscreenBtn.innerHTML = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
   }
 
   setTimeout(() => {
@@ -772,7 +823,7 @@ document.addEventListener("fullscreenchange", () => {
 
   state.isFullscreen = isFS;
   viewerSlideEl.classList.toggle("fs-mode", isFS);
-  vsFullscreenBtn.textContent = isFS ? "⊠" : "⛶";
+  vsFullscreenBtn.innerHTML = isFS ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3v3a2 2 0 01-2 2H3m18 0h-3a2 2 0 01-2-2V3m0 18v-3a2 2 0 012-2h3M3 16h3a2 2 0 012 2v3"/></svg>' : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M8 3H5a2 2 0 00-2 2v3m18 0V5a2 2 0 00-2-2h-3m0 18h3a2 2 0 002-2v-3M3 16v3a2 2 0 002 2h3"/></svg>';
 
   setTimeout(() => {
     if (state.pdfDoc) renderCurrentSlide();
